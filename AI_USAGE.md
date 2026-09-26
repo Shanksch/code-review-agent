@@ -130,3 +130,18 @@ As implementation proceeds, append a dated entry per work session with:
 2. What code was generated vs. hand-written or corrected
 3. Any deviation from `ARCHITECTURE.md`/`PLAN.md` and why
 4. Bugs or hallucinated code caught and fixed manually
+
+---
+
+## Implementation Phase — Day 1 (Foundation)
+
+### AI Assistance (Scaffolding & Boilerplate)
+- Used the AI IDE as a pair programmer to rapidly generate boilerplate for the Next.js frontend (Tailwind configs, standard UI layouts) and the FastAPI backend (SQLModel schema classes mirroring my `schema.sql`).
+- Relied on AI to stub out standard CRUD endpoints (Projects, AI Provider Configs) which saved significant typing time, allowing me to focus on business logic.
+
+### Manually Written & Refined by Me
+- **ZIP Extraction Security:** I manually authored and verified the zip-slip guard logic in `zip_extractor.py`. I explicitly ensured paths couldn't traverse outside the upload directory (`..` detection) and that the database wouldn't be flooded with `node_modules` or `.git` files.
+- **Tree Builder Algorithm:** The flat-to-nested tree transformation logic in `tree_builder.py` was heavily guided and corrected by me. The AI initially struggled to bubble up the highest issue severity to parent folders properly; I had to manually step in to enforce the `CRITICAL > HIGH > MEDIUM > LOW` ranking logic in Python.
+- **Provider Connection Tester:** I designed the `POST /ai-provider-configs/{id}/test` endpoint logic to ensure it fires a low-token `max_tokens=5` dummy completion to validate user API keys immediately before saving them. I had to tweak the AI's HTTP client code to properly catch and surface specific timeout/connection errors to the frontend.
+- **Auth Integration:** While AI generated the standard UI, I manually wired the Supabase `getSession()` logic into the Next.js `AuthContext` and the FastAPI `get_current_user` dependency to guarantee that the JWT `sub` claim matched my database foreign keys perfectly.
+- **Troubleshooting:** Caught and fixed an issue where the AI accidentally generated empty `requirements.txt` and `package.json` files during scaffolding. I manually recreated the dependencies, re-ran the installs, and verified the dev server startup.
