@@ -40,9 +40,12 @@ export default function ProviderForm({ onSuccess, onCancel }: ProviderFormProps)
     setError(null);
     setTestSuccess(false);
     try {
-      // In a real app, this would hit the backend's /ai-provider-configs/test endpoint
-      // For now, we simulate a test delay
-      await new Promise(r => setTimeout(r, 1000));
+      await api.post("/ai-provider-configs/test", {
+        name: presetConfigs.find(p => p.url === baseUrl)?.name || "Custom",
+        base_url: baseUrl,
+        api_key: apiKey,
+        model_name: modelName
+      });
       setTestSuccess(true);
     } catch (err: any) {
       setError(err.message || "Failed to connect to provider");

@@ -133,7 +133,7 @@ For every significant AI-assisted step, log:
 
 ## If behind schedule — cut in this order
 
-1. Drag-and-drop / GitHub URL upload (already out of scope — ZIP only, no cut needed)
+1. Drag-and-drop / GitHub URL upload (~~already out of scope — ZIP only, no cut needed~~ Built anyway due to DX demands!)
 2. Bonus features (drop to 1, or 0 if truly tight)
 3. Whole-project map-reduce review (keep single/multi-file review working, this is graded higher)
 4. Review search filters (keep the search endpoint minimal, drop extra filter chips)

@@ -71,3 +71,68 @@ async def test_provider_connection(
             return {"status": "success", "message": "Connection successful"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Connection failed: {str(e)}")
+
+
+@router.post("/ai-provider-configs/test")
+async def test_new_provider_connection(
+    config: ProviderConfigCreate,
+    user_id: UUID = Depends(get_current_user)
+):
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.post(
+                f"{config.base_url.rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {config.api_key}"},
+                json={
+                    "model": config.model_name,
+                    "messages": [{"role": "user", "content": "Ping"}]
+                },
+                timeout=10.0
+            )
+            res.raise_for_status()
+            return {"status": "success", "message": "Connection successful"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Connection failed: {str(e)}")
+
+class ProviderConfigUpdate(BaseModel):
+    model_name: str
+
+@router.patch("/ai-provider-configs/{config_id}", response_model=AiProviderConfig)
+async def update_config(
+    config_id: UUID,
+    update_data: ProviderConfigUpdate,
+    user_id: UUID = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    config = await db.get(AiProviderConfig, config_id)
+    if not config or config.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Config not found")
+    
+    config.model_name = update_data.model_name
+    await db.commit()
+    await db.refresh(config)
+    return config
+
+@router.get("/ai-provider-configs/{config_id}/models")
+async def get_provider_models(
+    config_id: UUID,
+    user_id: UUID = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    config = await db.get(AiProviderConfig, config_id)
+    if not config or config.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Config not found")
+        
+    try:
+        async with httpx.AsyncClient() as client:
+            res = await client.get(
+                f"{config.base_url.rstrip('/')}/models",
+                headers={"Authorization": f"Bearer {config.api_key}"},
+                timeout=10.0
+            )
+            res.raise_for_status()
+            data = res.json()
+            models = [m["id"] for m in data.get("data", [])]
+            return {"models": models}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to fetch models: {str(e)}")

@@ -31,13 +31,22 @@ def build_tree(files: list[FileModel]) -> list[dict]:
             if part not in current:
                 if i == len(parts) - 1:
                     # Leaf node (file)
+                    # Compute highest severity for this file from its issues
+                    file_severity = None
+                    if hasattr(file, "issues") and file.issues:
+                        rank = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+                        file_severity = max((i.severity for i in file.issues if i.severity), key=lambda s: rank.get(s, 0), default=None)
+                        # We use .value if it's an enum, otherwise just string
+                        if hasattr(file_severity, "value"):
+                            file_severity = file_severity.value
+
                     current[part] = {
                         "_type": "file",
                         "_id": str(file.id),
                         "_path": file.path,
                         "_language": file.language,
                         "_size": file.size_bytes,
-                        "_severity": None,
+                        "_severity": file_severity,
                     }
                 else:
                     # Directory node

@@ -81,6 +81,7 @@ backend/
       ai_providers.py
     services/
       zip_extractor.py      # zip-slip guarded extraction, noise-folder skip
+      github_importer.py    # shallow git clone + noise-folder skip
       tree_builder.py        # flat File rows -> nested tree JSON
       severity_aggregator.py # per-file highest severity from latest review only
       slug_generator.py      # command_slug generation w/ fallback chain
@@ -125,10 +126,13 @@ differs between OpenAI / LM Studio / Ollama / OpenRouter — never hardcoded.
 2. Build system prompt per template (Security / Performance / Code Quality / Tech Debt /
    Architecture) — prompt instructs strict JSON output matching the `Issue` schema,
    **including `function_name`, `line_start`, `line_end` where identifiable.**
-3. Call provider async; parse JSON; one retry on malformed output.
+3. Call provider async; parse JSON.
+   - **Rate Limiting:** The `provider_client` automatically intercepts `429 Too Many Requests`, extracts the retry window, and performs exponential backoff to ensure massive codebases don't crash the pipeline.
+   - **Context Limits:** Files exceeding model limits (`413` or `400 context_length_exceeded`) are gracefully caught and recorded as a "Low Severity" issue (notifying the user the file was skipped) rather than halting the review.
 4. **Project-scope reviews (map-reduce):** review files individually/in batches, then run
    one synthesis call over per-file results to produce the aggregated `Review.summary`.
-5. Persist: one `Review` row + N `Issue` rows (joined via `review_id`), each `Issue`
+5. **Background execution:** The `run_review` HTTP endpoint immediately returns `202 Accepted` and delegates the actual work (steps 1-4) to FastAPI's `BackgroundTasks`, preventing `socket hang up` or server timeouts on massive repositories.
+6. Persist: one `Review` row + N `Issue` rows (joined via `review_id`), each `Issue`
    gets a generated `command_slug` (see §3.5).
 
 ### 3.4 Chat With Code
@@ -206,9 +210,11 @@ See `schema.sql` for full DDL. Summary of tables:
 ## 5. AI Integration Flow (End-to-End)
 
 ```
-Upload ZIP → extract (zip-slip guarded) → skip noise dirs → flat File rows
+Upload ZIP or Paste GitHub URL → extract/clone → skip noise dirs → flat File rows
     → user triggers review (single/multi/project scope + template)
+    → HTTP 202 returned immediately, review_engine runs as a BackgroundTask
     → review_engine assembles context → provider_client calls configured AI endpoint
+    → provider_client auto-retries on 429s and skips 413s gracefully
     → parse structured JSON → persist Review + Issue rows (with generated slugs)
     → GET /tree recomputes severity-per-file (latest review only)
     → user clicks node → sidebar lists issues → center panel tabs Code/Issue
@@ -227,8 +233,8 @@ Upload ZIP → extract (zip-slip guarded) → skip noise dirs → flat File rows
   review pipeline.
 - **Supabase Postgres, no separate `User` table** — `auth.users.id` used directly as FK.
 - **Flat file storage + derived tree**, not a folder table — simpler, single source of truth.
-- **ZIP upload chosen** as the required upload method (drag-and-drop/GitHub URL not built
-  — explicit scope choice, not an oversight).
+- **BackgroundTasks for Reviews** — prevents long-running AI calls from exhausting HTTP timeouts.
+- **GitHub URL + ZIP upload** — added GitHub cloning support natively via `git clone --depth 1` for drastically improved UX.
 - **Local disk for extracted files**, not Supabase Storage — direct filesystem access
   needed by the extractor/tree builder; would move to Supabase Storage under an ephemeral
   deployment target (deployment target TBD, noted as a documented tradeoff).

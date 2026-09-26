@@ -3,7 +3,8 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlmodel import SQLModel, Field, Relationship
-from sqlalchemy import Column, Text
+from sqlalchemy import Column, Text, String
+from sqlalchemy.dialects.postgresql import ENUM as pgEnum
 from typing import Optional
 
 
@@ -107,8 +108,8 @@ class Review(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     project_id: UUID = Field(foreign_key="projects.id", index=True)
     user_id: UUID
-    scope: ReviewScope
-    template_type: TemplateType
+    scope: ReviewScope = Field(sa_column=Column(String))
+    template_type: TemplateType = Field(sa_column=Column(String))
     summary: str = Field(default="")
     status: str = Field(default="pending")
     error_message: Optional[str] = Field(default=None)
@@ -127,7 +128,7 @@ class Issue(SQLModel, table=True):
     file_id: Optional[UUID] = Field(default=None, foreign_key="files.id")
     title: str
     description: str = Field(default="")
-    severity: SeverityLevel
+    severity: SeverityLevel = Field(sa_column=Column(String))
     function_name: Optional[str] = Field(default=None)
     line_start: Optional[int] = Field(default=None)
     line_end: Optional[int] = Field(default=None)
@@ -157,7 +158,7 @@ class ChatMessage(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     session_id: UUID = Field(foreign_key="chat_sessions.id", index=True)
-    role: ChatRole
+    role: ChatRole = Field(sa_column=Column(String))
     content: str = Field(sa_column=Column(Text))
     issue_id: Optional[UUID] = Field(default=None, foreign_key="issues.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)

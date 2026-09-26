@@ -40,6 +40,16 @@ export const api = {
     return res.json();
   },
 
+  async patch<T>(path: string, body: any): Promise<T> {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "PATCH",
+      headers: await getAuthHeaders(),
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  },
+
   async delete<T>(path: string): Promise<T> {
     const res = await fetch(`${API_BASE}${path}`, {
       method: "DELETE",

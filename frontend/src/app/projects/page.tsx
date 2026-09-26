@@ -28,8 +28,6 @@ export default function ProjectsDashboard() {
   const [showProviderForm, setShowProviderForm] = useState(false);
   const router = useRouter();
 
-  const [newProjectName, setNewProjectName] = useState("");
-  const [newProjectDesc, setNewProjectDesc] = useState("");
   const [selectedConfigId, setSelectedConfigId] = useState("");
   const [creating, setCreating] = useState(false);
 
@@ -59,8 +57,8 @@ export default function ProjectsDashboard() {
     setCreating(true);
     try {
       const p = await api.post<Project>("/projects", {
-        name: newProjectName,
-        description: newProjectDesc,
+        name: "New Codebase",
+        description: "",
         ai_provider_config_id: selectedConfigId
       });
       router.push(`/projects/${p.id}`);
@@ -136,26 +134,6 @@ export default function ProjectsDashboard() {
             <div className="card w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-200">
               <h2 className="text-xl font-semibold text-zinc-50 tracking-tight mb-6">Create Project</h2>
               <form onSubmit={handleCreateProject} className="space-y-4">
-                <div>
-                  <label className="label-text">Project Name</label>
-                  <input
-                    type="text"
-                    required
-                    value={newProjectName}
-                    onChange={(e) => setNewProjectName(e.target.value)}
-                    className="input-field"
-                    placeholder="e.g. Frontend Monorepo"
-                  />
-                </div>
-                <div>
-                  <label className="label-text">Description</label>
-                  <textarea
-                    value={newProjectDesc}
-                    onChange={(e) => setNewProjectDesc(e.target.value)}
-                    className="input-field min-h-[80px]"
-                    placeholder="Brief details about this codebase"
-                  />
-                </div>
                 <div>
                   <div className="flex justify-between items-center mb-1.5">
                     <label className="label-text mb-0">AI Provider Config</label>
