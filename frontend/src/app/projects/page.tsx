@@ -6,61 +6,44 @@ import { api } from "@/lib/api";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Navbar from "@/components/Navbar";
 import ProviderForm from "@/components/providers/ProviderForm";
-import {
-  Plus,
-  FolderOpen,
-  Trash2,
-  FileCode2,
-  Calendar,
-  Loader2,
-  ChevronDown,
-  Cpu,
-  X,
-} from "lucide-react";
-
-interface AiProviderConfig {
-  id: string;
-  name: string;
-  base_url: string;
-  api_key_set: boolean;
-  model_name: string;
-  is_default: boolean;
-}
+import { Plus, FolderOpen, Loader2 } from "lucide-react";
 
 interface Project {
   id: string;
   name: string;
   description: string;
-  ai_provider_config_id: string | null;
   created_at: string;
-  file_count: number;
 }
 
-export default function ProjectsPage() {
+interface ProviderConfig {
+  id: string;
+  model_name: string;
+}
+
+export default function ProjectsDashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
-  const [providers, setProviders] = useState<AiProviderConfig[]>([]);
+  const [configs, setConfigs] = useState<ProviderConfig[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showNewProject, setShowNewProject] = useState(false);
   const [showProviderForm, setShowProviderForm] = useState(false);
-  const [newProject, setNewProject] = useState({
-    name: "",
-    description: "",
-    ai_provider_config_id: "" as string,
-  });
-  const [creating, setCreating] = useState(false);
-  const [deleting, setDeleting] = useState<string | null>(null);
   const router = useRouter();
+
+  const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectDesc, setNewProjectDesc] = useState("");
+  const [selectedConfigId, setSelectedConfigId] = useState("");
+  const [creating, setCreating] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
-      const [projectsRes, providersRes] = await Promise.all([
-        api.get<{ projects: Project[]; total: number }>("/projects"),
-        api.get<AiProviderConfig[]>("/ai-provider-configs"),
+      const [projData, confData] = await Promise.all([
+        api.get<Project[]>("/projects"),
+        api.get<ProviderConfig[]>("/ai-provider-configs")
       ]);
-      setProjects(projectsRes.projects);
-      setProviders(providersRes);
-    } catch (e) {
-      console.error("Failed to fetch data:", e);
+      setProjects(projData);
+      setConfigs(confData);
+      if (confData.length > 0) setSelectedConfigId(confData[0].id);
+    } catch (err) {
+      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -70,294 +53,169 @@ export default function ProjectsPage() {
     fetchData();
   }, [fetchData]);
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProject.name.trim()) return;
-
+    if (!selectedConfigId) return;
     setCreating(true);
     try {
-      const project = await api.post<Project>("/projects", {
-        name: newProject.name,
-        description: newProject.description,
-        ai_provider_config_id: newProject.ai_provider_config_id || null,
+      const p = await api.post<Project>("/projects", {
+        name: newProjectName,
+        description: newProjectDesc,
+        ai_provider_config_id: selectedConfigId
       });
-      setProjects((prev) => [project, ...prev]);
-      setShowCreateModal(false);
-      setNewProject({ name: "", description: "", ai_provider_config_id: "" });
-      router.push(`/projects/${project.id}`);
-    } catch (e) {
-      console.error("Failed to create project:", e);
-    } finally {
+      router.push(`/projects/${p.id}`);
+    } catch (err) {
+      console.error(err);
       setCreating(false);
-    }
-  };
-
-  const handleDelete = async (projectId: string) => {
-    if (!confirm("Are you sure you want to delete this project? This cannot be undone.")) return;
-    
-    setDeleting(projectId);
-    try {
-      await api.delete(`/projects/${projectId}`);
-      setProjects((prev) => prev.filter((p) => p.id !== projectId));
-    } catch (e) {
-      console.error("Failed to delete project:", e);
-    } finally {
-      setDeleting(null);
     }
   };
 
   return (
     <ProtectedRoute>
-      <Navbar />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-white">Projects</h1>
-            <p className="text-gray-400 mt-1">
-              Upload code and get AI-powered reviews
-            </p>
-          </div>
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="btn-primary flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            New Project
-          </button>
-        </div>
-
-        {/* Projects Grid */}
-        {loading ? (
-          <div className="flex justify-center py-20">
-            <Loader2 className="w-8 h-8 text-brand-400 animate-spin" />
-          </div>
-        ) : projects.length === 0 ? (
-          <div className="text-center py-20 animate-fade-in">
-            <div className="w-20 h-20 rounded-2xl bg-surface-2 border border-surface-4 flex items-center justify-center mx-auto mb-5">
-              <FolderOpen className="w-10 h-10 text-gray-600" />
+      <div className="min-h-screen bg-zinc-950">
+        <Navbar />
+        
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <div className="flex justify-between items-end mb-8">
+            <div>
+              <h1 className="text-3xl font-semibold text-zinc-50 tracking-tight mb-2">Projects</h1>
+              <p className="text-zinc-400">Manage your codebases and AI review runs.</p>
             </div>
-            <h2 className="text-xl font-semibold text-gray-300 mb-2">
-              No projects yet
-            </h2>
-            <p className="text-gray-500 mb-6 max-w-sm mx-auto">
-              Create your first project to start uploading code and running AI reviews.
-            </p>
             <button
-              onClick={() => setShowCreateModal(true)}
-              className="btn-primary inline-flex items-center gap-2"
+              onClick={() => setShowNewProject(true)}
+              className="btn-primary flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />
-              Create First Project
+              <span>New Project</span>
             </button>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {projects.map((project, i) => (
-              <div
-                key={project.id}
-                className="glass-card p-5 hover:border-brand-500/20 transition-all cursor-pointer group animate-slide-up"
-                style={{ animationDelay: `${i * 50}ms` }}
-                onClick={() => router.push(`/projects/${project.id}`)}
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="w-10 h-10 rounded-lg bg-brand-600/10 border border-brand-500/20 flex items-center justify-center">
-                    <FileCode2 className="w-5 h-5 text-brand-400" />
-                  </div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(project.id);
-                    }}
-                    className="p-1.5 rounded-lg text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-all opacity-0 group-hover:opacity-100"
-                  >
-                    {deleting === project.id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
 
-                <h3 className="text-lg font-semibold text-white mb-1 group-hover:text-brand-300 transition-colors">
-                  {project.name}
-                </h3>
-                {project.description && (
-                  <p className="text-sm text-gray-500 line-clamp-2 mb-3">
-                    {project.description}
-                  </p>
-                )}
-
-                <div className="flex items-center gap-4 text-xs text-gray-600 mt-auto pt-2 border-t border-white/5">
-                  <span className="flex items-center gap-1">
-                    <FileCode2 className="w-3 h-3" />
-                    {project.file_count} files
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-3 h-3" />
-                    {new Date(project.created_at).toLocaleDateString()}
-                  </span>
-                </div>
+          {loading ? (
+            <div className="flex justify-center py-20">
+              <Loader2 className="w-8 h-8 text-sky-500 animate-spin" />
+            </div>
+          ) : projects.length === 0 ? (
+            <div className="card border-dashed border-white/10 bg-zinc-900/30 flex flex-col items-center justify-center py-24 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-zinc-800 flex items-center justify-center mb-6">
+                <FolderOpen className="w-8 h-8 text-zinc-400" />
               </div>
-            ))}
-          </div>
-        )}
-
-        {/* Create Project Modal */}
-        {showCreateModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-            <div
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-              onClick={() => setShowCreateModal(false)}
-            />
-            <div className="relative glass-card p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto animate-slide-up">
-              <div className="flex items-center justify-between mb-5">
-                <h2 className="text-xl font-semibold text-white">
-                  New Project
-                </h2>
-                <button
-                  onClick={() => setShowCreateModal(false)}
-                  className="p-1.5 rounded-lg text-gray-500 hover:text-gray-300 hover:bg-surface-3"
+              <h3 className="text-xl font-medium text-zinc-200 mb-2">No projects yet</h3>
+              <p className="text-zinc-500 max-w-sm mb-6">
+                Create your first project, upload a codebase, and start running automated AI reviews.
+              </p>
+              <button onClick={() => setShowNewProject(true)} className="btn-secondary">
+                Create Project
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {projects.map((p) => (
+                <div
+                  key={p.id}
+                  onClick={() => router.push(`/projects/${p.id}`)}
+                  className="card p-6 cursor-pointer group hover:border-sky-500/30 transition-all hover:-translate-y-1"
                 >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
+                  <h3 className="text-lg font-medium text-zinc-100 group-hover:text-sky-400 transition-colors mb-2">
+                    {p.name}
+                  </h3>
+                  <p className="text-sm text-zinc-400 line-clamp-2 mb-4">
+                    {p.description || "No description provided."}
+                  </p>
+                  <div className="text-xs font-mono text-zinc-500 pt-4 border-t border-white/5">
+                    {new Date(p.created_at).toLocaleDateString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </main>
 
-              <form onSubmit={handleCreate} className="space-y-4">
+        {/* New Project Modal */}
+        {showNewProject && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-sm">
+            <div className="card w-full max-w-md p-6 animate-in fade-in zoom-in-95 duration-200">
+              <h2 className="text-xl font-semibold text-zinc-50 tracking-tight mb-6">Create Project</h2>
+              <form onSubmit={handleCreateProject} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1.5">
-                    Project Name
-                  </label>
+                  <label className="label-text">Project Name</label>
                   <input
                     type="text"
-                    value={newProject.name}
-                    onChange={(e) =>
-                      setNewProject((p) => ({ ...p, name: e.target.value }))
-                    }
-                    className="input-field"
-                    placeholder="e.g. Portfolio Website"
                     required
-                    autoFocus
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                    className="input-field"
+                    placeholder="e.g. Frontend Monorepo"
                   />
                 </div>
-
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1.5">
-                    Description
-                    <span className="text-gray-600 text-xs ml-1.5">
-                      (optional)
-                    </span>
-                  </label>
+                  <label className="label-text">Description</label>
                   <textarea
-                    value={newProject.description}
-                    onChange={(e) =>
-                      setNewProject((p) => ({
-                        ...p,
-                        description: e.target.value,
-                      }))
-                    }
-                    className="input-field resize-none h-20"
-                    placeholder="Brief description of the project..."
+                    value={newProjectDesc}
+                    onChange={(e) => setNewProjectDesc(e.target.value)}
+                    className="input-field min-h-[80px]"
+                    placeholder="Brief details about this codebase"
                   />
                 </div>
-
-                {/* Provider selection */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-1.5">
-                    <Cpu className="w-3.5 h-3.5 inline mr-1.5 opacity-60" />
-                    AI Provider
-                  </label>
-
-                  {!showProviderForm ? (
-                    <>
-                      {providers.length > 0 ? (
-                        <div className="space-y-2">
-                          <select
-                            value={newProject.ai_provider_config_id}
-                            onChange={(e) =>
-                              setNewProject((p) => ({
-                                ...p,
-                                ai_provider_config_id: e.target.value,
-                              }))
-                            }
-                            className="input-field"
-                          >
-                            <option value="">Select a provider...</option>
-                            {providers.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name} ({p.model_name})
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => setShowProviderForm(true)}
-                            className="text-sm text-brand-400 hover:text-brand-300 transition-colors"
-                          >
-                            + Add new provider
-                          </button>
-                        </div>
-                      ) : (
-                        <div>
-                          <p className="text-sm text-gray-500 mb-2">
-                            No providers configured yet.
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => setShowProviderForm(true)}
-                            className="btn-ghost text-sm border border-dashed border-surface-4"
-                          >
-                            <Plus className="w-3.5 h-3.5 inline mr-1" />
-                            Configure AI Provider
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="glass-card p-4 mt-2">
-                      <ProviderForm
-                        onCreated={(config) => {
-                          setProviders((prev) => [config, ...prev]);
-                          setNewProject((p) => ({
-                            ...p,
-                            ai_provider_config_id: config.id,
-                          }));
-                          setShowProviderForm(false);
-                        }}
-                        onCancel={() => setShowProviderForm(false)}
-                      />
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="label-text mb-0">AI Provider Config</label>
+                    <button
+                      type="button"
+                      onClick={() => setShowProviderForm(true)}
+                      className="text-xs text-sky-400 hover:text-sky-300 transition-colors"
+                    >
+                      + Add New
+                    </button>
+                  </div>
+                  {configs.length === 0 ? (
+                    <div className="text-sm text-yellow-400 bg-yellow-500/10 p-3 rounded-lg border border-yellow-500/20">
+                      You need to add an AI Provider config first.
                     </div>
+                  ) : (
+                    <select
+                      required
+                      value={selectedConfigId}
+                      onChange={(e) => setSelectedConfigId(e.target.value)}
+                      className="input-field appearance-none bg-zinc-900"
+                    >
+                      {configs.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.model_name}
+                        </option>
+                      ))}
+                    </select>
                   )}
                 </div>
 
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="submit"
-                    disabled={creating || !newProject.name.trim()}
-                    className="btn-primary flex-1 flex items-center justify-center gap-2"
-                  >
-                    {creating ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Plus className="w-4 h-4" />
-                        Create Project
-                      </>
-                    )}
+                <div className="flex gap-3 pt-4 border-t border-white/5">
+                  <button type="button" onClick={() => setShowNewProject(false)} className="btn-secondary flex-1">
+                    Cancel
                   </button>
                   <button
-                    type="button"
-                    onClick={() => setShowCreateModal(false)}
-                    className="btn-ghost"
+                    type="submit"
+                    disabled={creating || configs.length === 0}
+                    className="btn-primary flex-1 flex justify-center items-center"
                   >
-                    Cancel
+                    {creating ? <Loader2 className="w-5 h-5 animate-spin" /> : "Create"}
                   </button>
                 </div>
               </form>
             </div>
           </div>
         )}
-      </main>
+
+        {/* Provider Form Modal */}
+        {showProviderForm && (
+          <ProviderForm
+            onCancel={() => setShowProviderForm(false)}
+            onSuccess={async (newId) => {
+              setShowProviderForm(false);
+              await fetchData();
+              setSelectedConfigId(newId);
+            }}
+          />
+        )}
+      </div>
     </ProtectedRoute>
   );
 }

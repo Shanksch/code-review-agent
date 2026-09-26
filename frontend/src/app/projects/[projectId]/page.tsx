@@ -1,236 +1,110 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams } from "next/navigation";
-import { api, uploadFile } from "@/lib/api";
-import ProtectedRoute from "@/components/ProtectedRoute";
+import { use, useState, useEffect } from "react";
+import { api } from "@/lib/api";
 import Navbar from "@/components/Navbar";
-import {
-  Upload,
-  FolderOpen,
-  FileCode2,
-  Loader2,
-  CheckCircle2,
-  AlertCircle,
-} from "lucide-react";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import { Loader2, UploadCloud, FolderTree, AlertCircle } from "lucide-react";
 
-interface Project {
-  id: string;
-  name: string;
-  description: string;
-  ai_provider_config_id: string | null;
-  created_at: string;
-  file_count: number;
-}
-
-export default function ProjectWorkspacePage() {
-  const { projectId } = useParams<{ projectId: string }>();
-  const [project, setProject] = useState<Project | null>(null);
+export default function ProjectWorkspace({ params }: { params: Promise<{ projectId: string }> }) {
+  // Use React.use() to unwrap the params promise
+  const { projectId } = use(params);
+  
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<{
-    success: boolean;
-    message: string;
-  } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const fetchProject = useCallback(async () => {
-    try {
-      const data = await api.get<Project>(`/projects/${projectId}`);
-      setProject(data);
-    } catch (e) {
-      console.error("Failed to fetch project:", e);
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId]);
+  const [project, setProject] = useState<any>(null);
+  
+  // Later: treeData, uploading state, etc.
 
   useEffect(() => {
+    const fetchProject = async () => {
+      try {
+        const data = await api.get(`/projects/${projectId}`);
+        setProject(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchProject();
-  }, [fetchProject]);
-
-  const handleUpload = async (file: File) => {
-    if (!file.name.endsWith(".zip")) {
-      setUploadResult({
-        success: false,
-        message: "Please upload a ZIP file",
-      });
-      return;
-    }
-
-    setUploading(true);
-    setUploadResult(null);
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      await uploadFile(`/projects/${projectId}/upload`, formData);
-      setUploadResult({
-        success: true,
-        message: "Files uploaded and extracted successfully!",
-      });
-      fetchProject(); // Refresh file count
-    } catch (e) {
-      setUploadResult({
-        success: false,
-        message: "Upload failed. Please try again.",
-      });
-    } finally {
-      setUploading(false);
-    }
-  };
+  }, [projectId]);
 
   if (loading) {
     return (
-      <ProtectedRoute>
+      <div className="min-h-screen bg-zinc-950 flex flex-col">
         <Navbar />
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <Loader2 className="w-8 h-8 text-brand-400 animate-spin" />
+        <div className="flex-1 flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-sky-500 animate-spin" />
         </div>
-      </ProtectedRoute>
-    );
-  }
-
-  if (!project) {
-    return (
-      <ProtectedRoute>
-        <Navbar />
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <p className="text-gray-500">Project not found</p>
-        </div>
-      </ProtectedRoute>
+      </div>
     );
   }
 
   return (
     <ProtectedRoute>
-      <Navbar />
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Project Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-white">{project.name}</h1>
-          {project.description && (
-            <p className="text-gray-400 mt-1">{project.description}</p>
-          )}
-          <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
-            <span className="flex items-center gap-1">
-              <FileCode2 className="w-3.5 h-3.5" />
-              {project.file_count} files
-            </span>
+      <div className="min-h-screen bg-zinc-950 flex flex-col overflow-hidden h-screen">
+        <Navbar />
+        
+        {/* Workspace Toolbar */}
+        <div className="h-14 border-b border-white/5 bg-zinc-900/50 flex items-center px-4 justify-between shrink-0">
+          <div className="flex items-center gap-3 text-sm">
+            <span className="text-zinc-400">Workspace /</span>
+            <span className="font-medium text-zinc-100">{project?.name}</span>
+          </div>
+          <div className="flex gap-2">
+            <button className="btn-secondary py-1.5 text-sm flex items-center gap-2">
+              <UploadCloud className="w-4 h-4" />
+              Upload Codebase
+            </button>
+            <button className="btn-primary py-1.5 text-sm">
+              Run Review
+            </button>
           </div>
         </div>
 
-        {/* Upload Section (shown when no files) */}
-        {project.file_count === 0 ? (
-          <div className="animate-fade-in">
-            <div
-              className="glass-card p-12 border-2 border-dashed border-surface-4 hover:border-brand-500/30 transition-colors cursor-pointer"
-              onClick={() => fileInputRef.current?.click()}
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.currentTarget.classList.add("border-brand-500/50");
-              }}
-              onDragLeave={(e) => {
-                e.currentTarget.classList.remove("border-brand-500/50");
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                e.currentTarget.classList.remove("border-brand-500/50");
-                const file = e.dataTransfer.files[0];
-                if (file) handleUpload(file);
-              }}
-            >
-              <div className="text-center">
-                {uploading ? (
-                  <div className="flex flex-col items-center gap-3">
-                    <Loader2 className="w-12 h-12 text-brand-400 animate-spin" />
-                    <p className="text-gray-300">
-                      Extracting and processing files...
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="w-16 h-16 rounded-2xl bg-brand-600/10 border border-brand-500/20 flex items-center justify-center mx-auto mb-4">
-                      <Upload className="w-8 h-8 text-brand-400" />
-                    </div>
-                    <h3 className="text-lg font-semibold text-white mb-1">
-                      Upload Your Code
-                    </h3>
-                    <p className="text-gray-400 text-sm mb-4">
-                      Drop a ZIP file here, or click to browse
-                    </p>
-                    <p className="text-xs text-gray-600">
-                      ZIP files up to 50MB • node_modules and build artifacts
-                      are automatically excluded
-                    </p>
-                  </>
-                )}
+        {/* 3-Pane Layout */}
+        <div className="flex-1 flex overflow-hidden">
+          
+          {/* Left: File Tree */}
+          <aside className="w-64 border-r border-white/5 bg-zinc-900/20 flex flex-col shrink-0">
+            <div className="h-10 flex items-center px-4 border-b border-white/5 text-xs font-medium text-zinc-400 uppercase tracking-wider">
+              <FolderTree className="w-4 h-4 mr-2" /> Explorer
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 text-sm text-zinc-500 flex items-center justify-center text-center">
+              Upload a ZIP file to view your codebase tree.
+            </div>
+          </aside>
+
+          {/* Center: Code / Issue Tabs */}
+          <main className="flex-1 flex flex-col bg-zinc-950 overflow-hidden relative">
+            <div className="h-10 flex items-center border-b border-white/5 bg-zinc-900/30 shrink-0">
+              <div className="px-4 py-2 text-sm font-medium border-b-2 border-sky-500 text-sky-400">
+                Code
+              </div>
+              <div className="px-4 py-2 text-sm font-medium text-zinc-500 hover:text-zinc-300 cursor-pointer">
+                Issue Analysis
               </div>
             </div>
-
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".zip"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleUpload(file);
-              }}
-            />
-
-            {uploadResult && (
-              <div
-                className={`mt-4 p-4 rounded-lg flex items-center gap-3 animate-fade-in ${
-                  uploadResult.success
-                    ? "bg-green-500/10 border border-green-500/20 text-green-400"
-                    : "bg-red-500/10 border border-red-500/20 text-red-400"
-                }`}
-              >
-                {uploadResult.success ? (
-                  <CheckCircle2 className="w-5 h-5 shrink-0" />
-                ) : (
-                  <AlertCircle className="w-5 h-5 shrink-0" />
-                )}
-                <span>{uploadResult.message}</span>
+            <div className="flex-1 overflow-y-auto p-8 flex items-center justify-center">
+              <div className="text-center text-zinc-500 max-w-sm">
+                <AlertCircle className="w-12 h-12 text-zinc-800 mx-auto mb-4" />
+                <p>Select a file from the explorer to view its contents and associated AI review.</p>
               </div>
-            )}
-          </div>
-        ) : (
-          <div className="glass-card p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <FolderOpen className="w-5 h-5 text-brand-400" />
-              <h2 className="text-lg font-semibold text-white">
-                Code Explorer
-              </h2>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="ml-auto btn-ghost text-sm flex items-center gap-1.5"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                Re-upload
-              </button>
             </div>
-            <p className="text-gray-500 text-sm">
-              File tree and code explorer will be built in Day 2.
-              <br />
-              {project.file_count} files are stored and ready for review.
-            </p>
+          </main>
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".zip"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleUpload(file);
-              }}
-            />
-          </div>
-        )}
-      </main>
+          {/* Right: Issue Sidebar */}
+          <aside className="w-80 border-l border-white/5 bg-zinc-900/20 flex flex-col shrink-0">
+            <div className="h-10 flex items-center px-4 border-b border-white/5 text-xs font-medium text-zinc-400 uppercase tracking-wider">
+              Detected Issues
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 text-sm text-zinc-500 flex items-center justify-center text-center">
+              No issues detected for this file.
+            </div>
+          </aside>
+
+        </div>
+      </div>
     </ProtectedRoute>
   );
 }
