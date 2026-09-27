@@ -9,6 +9,9 @@ CREATE TABLE ai_provider_configs (
     api_key TEXT NOT NULL,
     model_name TEXT NOT NULL,
     is_default BOOLEAN DEFAULT FALSE,
+    temperature FLOAT,
+    max_tokens INTEGER,
+    last_tested_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now()),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now())
 );
@@ -52,6 +55,9 @@ CREATE TABLE issues (
     file_id UUID REFERENCES files(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     description TEXT DEFAULT '',
+    evidence TEXT DEFAULT '',
+    category TEXT DEFAULT '',
+    confidence FLOAT,
     severity TEXT NOT NULL,
     function_name TEXT,
     line_start INTEGER,

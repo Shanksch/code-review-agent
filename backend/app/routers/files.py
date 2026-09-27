@@ -7,6 +7,7 @@ import tempfile
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -39,7 +40,7 @@ async def upload_zip(
     db: AsyncSession = Depends(get_db),
 ):
     """Upload a ZIP file, extract and store files for the project."""
-    await _get_owned_project(project_id, user_id, db)
+    project = await _get_owned_project(project_id, user_id, db)
 
     if not file.filename or not file.filename.endswith(".zip"):
         raise HTTPException(
@@ -56,7 +57,42 @@ async def upload_zip(
             detail=f"Failed to extract ZIP: {str(e)}",
         )
 
-    return {"message": "Files uploaded successfully", "file_count": file_count}
+    # Update project name to match the uploaded ZIP file
+    new_name = file.filename[:-4] # remove .zip
+    if new_name:
+        project.name = new_name
+        await db.commit()
+
+    return {"message": "Files uploaded successfully", "file_count": file_count, "project_name": project.name}
+
+
+@router.post("/upload-files", status_code=status.HTTP_201_CREATED)
+async def upload_files(
+    project_id: UUID,
+    files: List[UploadFile] = File(...),
+    user_id: UUID = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload multiple individual files and store them for the project."""
+    project = await _get_owned_project(project_id, user_id, db)
+
+    from app.services.zip_extractor import extract_and_store_files
+    
+    try:
+        file_count = await extract_and_store_files(project_id, files, db)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload files: {str(e)}",
+        )
+
+    # If project name is default, we can set it to the first file's name or leave it
+    if project.name == "New Codebase" and len(files) > 0:
+        # Get something reasonable, maybe the directory name if they uploaded a folder, but files usually just have the filename
+        project.name = "Imported Files"
+        await db.commit()
+
+    return {"message": "Files uploaded successfully", "file_count": file_count, "project_name": project.name}
 
 
 from pydantic import BaseModel
@@ -71,7 +107,7 @@ async def import_github(
     db: AsyncSession = Depends(get_db),
 ):
     """Clone a GitHub repository, extract and store files for the project."""
-    await _get_owned_project(project_id, user_id, db)
+    project = await _get_owned_project(project_id, user_id, db)
 
     from app.services.github_importer import clone_and_store_github
     
@@ -85,7 +121,20 @@ async def import_github(
             detail=f"Failed to clone repository: {str(e)}",
         )
 
-    return {"message": "Repository imported successfully", "file_count": file_count}
+    # Update project name to match the GitHub repo name
+    # e.g. https://github.com/owner/repo.git -> owner/repo
+    url = request.github_url.strip()
+    if url.endswith(".git"):
+        url = url[:-4]
+    
+    parts = url.split("/")
+    if len(parts) >= 2:
+        # Get "owner/repo" or just "repo" if we prefer
+        new_name = f"{parts[-2]}/{parts[-1]}"
+        project.name = new_name
+        await db.commit()
+
+    return {"message": "Repository imported successfully", "file_count": file_count, "project_name": project.name}
 
 
 from sqlalchemy.orm import selectinload
@@ -122,7 +171,10 @@ async def get_file_content(
     """Get the content of a specific file."""
     await _get_owned_project(project_id, user_id, db)
 
-    file = await db.get(FileModel, file_id)
+    stmt = select(FileModel).where(FileModel.id == file_id).options(selectinload(FileModel.issues))
+    result = await db.execute(stmt)
+    file = result.scalar_one_or_none()
+    
     if not file or file.project_id != project_id:
         raise HTTPException(status_code=404, detail="File not found")
 
@@ -143,4 +195,15 @@ async def get_file_content(
         "language": file.language,
         "size_bytes": file.size_bytes,
         "content": content,
+        "issues": [
+            {
+                "id": str(issue.id),
+                "title": issue.title,
+                "description": issue.description,
+                "severity": issue.severity.value if hasattr(issue.severity, 'value') else issue.severity,
+                "line_start": issue.line_start,
+                "line_end": issue.line_end,
+                "recommendation": issue.recommendation
+            } for issue in file.issues
+        ] if hasattr(file, "issues") and file.issues else []
     }

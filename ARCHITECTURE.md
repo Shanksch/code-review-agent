@@ -1,246 +1,325 @@
-# ARCHITECTURE.md
+# Architecture Document
 
-## AI-Powered Code Review Assistant
+This document describes the high-level architecture, component design, data flow, and key engineering decisions behind the AI Code Review Assistant.
 
 ---
 
-## 1. Overview
+## 1. System Architecture
 
-A full-stack application that lets developers upload a codebase (as a ZIP), automatically
-builds a navigable file tree, runs AI-generated code reviews against configurable
-OpenAI-compatible providers, and surfaces issues visually on the tree with severity-based
-coloring, a per-issue detail sidebar, and a code-aware chat interface using slash-command
-references.
+The application follows a **decoupled client-server architecture** with three distinct layers:
 
-**Stack:**
-- Frontend: Next.js (App Router) + TypeScript + Tailwind CSS
-- Backend: FastAPI (Python)
-- Database & Auth: Supabase (Postgres + Supabase Auth)
-- File storage: Local disk (see §7 for tradeoffs and deployment note)
-- AI Integration: Unified OpenAI-compatible client (OpenAI, LM Studio, Ollama, any
-  OpenAI-compatible endpoint)
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         CLIENT (Browser)                            │
+│                                                                     │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │                    Next.js 16 (App Router)                     │  │
+│  │                                                                │  │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────┐   │  │
+│  │  │  Auth    │  │ Projects │  │Workspace │  │  AI Chat     │   │  │
+│  │  │  Pages   │  │Dashboard │  │  Page    │  │  Component   │   │  │
+│  │  └──────────┘  └──────────┘  └──────────┘  └──────────────┘   │  │
+│  │                                                                │  │
+│  │  ┌──────────────────────────────────────────────────────────┐  │  │
+│  │  │              Shared: AuthContext, API Client              │  │  │
+│  │  └──────────────────────────────────────────────────────────┘  │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+│                              │                                       │
+│                    /api/* proxy (next.config.js)                      │
+└──────────────────────────────┼───────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                      SERVER (FastAPI)                                │
+│                                                                     │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐    │
+│  │ projects │  │  files   │  │ai_provid │  │   Auth Middleware │    │
+│  │  router  │  │  router  │  │  router  │  │   (JWT verify)   │    │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └──────────────────┘    │
+│       │              │              │                                │
+│  ┌────▼──────────────▼──────────────▼──────────────────────────┐    │
+│  │                    Service Layer                             │    │
+│  │  ┌────────────┐  ┌────────────┐  ┌──────────────────────┐   │    │
+│  │  │ Review     │  │    ZIP     │  │   Tree Builder       │   │    │
+│  │  │ Engine     │  │ Extractor  │  │                      │   │    │
+│  │  └──────┬─────┘  └────────────┘  └──────────────────────┘   │    │
+│  │         │                                                    │    │
+│  │  ┌──────▼──────────────────────────────────────────────┐    │    │
+│  │  │              AI Subsystem                            │    │    │
+│  │  │  ┌─────────────┐  ┌──────────┐  ┌───────────────┐   │    │    │
+│  │  │  │   Prompt    │  │ Provider │  │   Context      │   │    │    │
+│  │  │  │  Templates  │  │  Client  │  │   Builder      │   │    │    │
+│  │  │  └─────────────┘  └──────────┘  └───────────────┘   │    │    │
+│  │  └──────────────────────────────────────────────────────┘    │    │
+│  └──────────────────────────────────────────────────────────────┘    │
+│                              │                                       │
+└──────────────────────────────┼───────────────────────────────────────┘
+                               │
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    DATA LAYER                                       │
+│                                                                     │
+│  ┌──────────────────────┐    ┌──────────────────────────────────┐   │
+│  │  PostgreSQL (Supabase)│    │  AI Provider (External)          │   │
+│  │                       │    │  OpenAI / LM Studio / Ollama     │   │
+│  │  - Users (auth.users) │    │                                  │   │
+│  │  - Projects           │    │  Accessed via httpx (async)      │   │
+│  │  - Files              │    │  OpenAI-compatible chat/         │   │
+│  │  - Reviews            │    │  completions endpoint            │   │
+│  │  - Issues             │    └──────────────────────────────────┘   │
+│  │  - AI Provider Configs│                                          │
+│  │  - Chat Sessions      │                                          │
+│  └──────────────────────┘                                           │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## 2. Frontend Architecture
 
-```
-frontend/
-  app/
-    (auth)/login/
-    (auth)/register/
-    projects/
-      page.tsx                 # project list
-      [projectId]/
-        page.tsx                # main workspace: tree + code/issue tabs + chat
-        settings/               # provider config for this project (if editable later)
-  components/
-    tree/TreeNode.tsx           # recursive tree renderer, severity-colored dots
-    explorer/CodeIssueTabs.tsx  # tabbed center panel: Code | Issue, line-highlighted
-    sidebar/IssueSidebar.tsx    # lists issues for selected node, switch between them
-    chat/ChatBox.tsx            # project-wide chat, slash-command autocomplete
-    chat/CommandAutocomplete.tsx
-    providers/ProviderForm.tsx  # Base URL / API Key / Model Name entry
-    reviews/ReviewToolbar.tsx   # trigger review, search, severity filter
-  lib/
-    supabaseClient.ts
-    api.ts                      # typed fetch wrapper, attaches Supabase bearer token
-```
+### Framework & Routing
+- **Next.js 16** with the App Router and React 19
+- File-based routing under `src/app/`
+- Route groups: `(auth)` for login/register, `(root)` for the landing page, `projects/` for the dashboard and workspace
 
-**State/data flow:**
-- Supabase session token attached as `Authorization: Bearer <token>` on every backend call.
-- Tree, issues, and severity coloring are fetched from a single `GET /projects/{id}/tree`
-  endpoint (see §5) — the frontend does not compute severity aggregation itself.
-- Clicking a **file node**: opens the tabbed center panel. If the file has ≥1 issue, the
-  **Issue tab** is shown by default with the highest-severity issue loaded; the sidebar
-  lists all issues for that file, letting the user switch which issue is active in the
-  center panel. If no issues, the **Code tab** is shown by default.
-- The **code line range** of the active issue (`line_start`–`line_end`) is highlighted in
-  the severity's color when the Code tab is viewed alongside an active issue.
+### State Management
+The application uses **React's built-in state** (`useState`, `useEffect`, `useContext`) exclusively. No external state management libraries are used — this was a deliberate decision to keep the dependency footprint minimal and the mental model simple.
+
+- **AuthContext** — Global context providing `user`, `session`, `signIn`, `signUp`, `signOut` across the component tree
+- **Page-level state** — The workspace page (`projects/[projectId]/page.tsx`) manages all workspace state (tree, files, issues, reviews, active tabs) in a single component, passing props down to child components
+
+### Key Components
+
+| Component | Responsibility |
+|---|---|
+| `Navbar` | Global navigation, user info, sign-out |
+| `ProtectedRoute` | Auth guard wrapper — redirects unauthenticated users |
+| `FileTree` | Recursive tree renderer with search, expand/collapse, severity badges |
+| `CodeViewer` | Syntax-highlighted code display with line-level severity highlighting and inline AI actions |
+| `OverviewTab` | Project dashboard with stats, severity breakdown, review coverage, review history table |
+| `ReviewScopeModal` | Multi-step modal for configuring review scope, file selection, templates, and depth |
+| `CodeUploadModal` | ZIP upload with drag-and-drop, progress tracking, and GitHub URL import |
+| `ProviderSettingsModal` | Full CRUD for AI provider configurations with live connection testing |
+| `AIChat` | Context-aware chat interface with mode switching (issue / file / project context) |
+
+### API Communication
+All API calls go through a centralized `api` utility (`src/lib/api.ts`) that:
+1. Automatically injects the Supabase JWT token via `Authorization: Bearer` header
+2. Provides typed generic methods: `get<T>`, `post<T>`, `put<T>`, `patch<T>`, `delete<T>`
+3. Routes through Next.js rewrites (`/api/*` → `http://127.0.0.1:8000/api/*`) to avoid CORS complexity
+
+### Styling
+- **Tailwind CSS 3.4** with a custom dark theme
+- Consistent design tokens: `zinc-950` backgrounds, `sky-500` primary accents, `white/5` borders
+- Glassmorphism effects, subtle gradients, and micro-animations for a premium feel
 
 ---
 
 ## 3. Backend Architecture
 
+### Framework
+**FastAPI** with async support throughout. The application uses:
+- **SQLAlchemy 2.0** async sessions with `asyncpg` driver
+- **SQLModel** for ORM models (combining Pydantic + SQLAlchemy)
+- **Pydantic Settings** for configuration management
+- **python-jose** for JWT verification
+
+### Layer Separation
+
 ```
-backend/
-  app/
-    main.py
-    core/
-      config.py            # env vars: SUPABASE_URL, SUPABASE_JWT_SECRET, DATABASE_URL, etc.
-      deps.py               # get_current_user() — verifies Supabase JWT
-    db/
-      session.py
-    models/                 # SQLModel ORM models (see schema.sql for DDL)
-    schemas/                # Pydantic request/response DTOs
-    routers/
-      projects.py
-      files.py
-      reviews.py            # trigger + fetch + search reviews
-      chat.py
-      ai_providers.py
-    services/
-      zip_extractor.py      # zip-slip guarded extraction, noise-folder skip
-      github_importer.py    # shallow git clone + noise-folder skip
-      tree_builder.py        # flat File rows -> nested tree JSON
-      severity_aggregator.py # per-file highest severity from latest review only
-      slug_generator.py      # command_slug generation w/ fallback chain
-      ai/
-        provider_client.py   # unified OpenAI-compatible HTTP client
-        prompts.py           # one prompt template per review type
-        review_engine.py     # single/multi/project-scope review orchestration,
-                              # map-reduce synthesis for project-scope
-        chat_context.py       # keyword-overlap retrieval for project-wide chat
-  alembic/                    # migrations (or run schema.sql directly against Supabase)
+Routers (HTTP handlers)
+    │
+    ├── projects.py    — Projects, reviews, issues, chat, stats
+    ├── files.py       — File upload (ZIP), content retrieval
+    └── ai_providers.py — Provider CRUD, connection testing
+    │
+Services (Business logic)
+    │
+    ├── zip_extractor.py   — ZIP parsing, binary detection, file storage
+    ├── tree_builder.py    — Hierarchical tree construction from flat file paths
+    └── ai/
+        ├── review_engine.py   — Orchestrates the full review lifecycle
+        ├── provider_client.py — Generic OpenAI-compatible HTTP client
+        ├── prompts.py         — Template-specific system prompts
+        └── context_builder.py — Assembles file content into AI context
 ```
 
-### 3.1 Auth
-- Supabase Auth issues and manages sessions (registration/login/logout handled by
-  `@supabase/supabase-js` on the frontend — backend never issues tokens).
-- Backend only **verifies** incoming Supabase JWTs (`core/deps.py`) using
-  `SUPABASE_JWT_SECRET`, extracting `sub` (the Supabase `auth.users.id`) as the current
-  user for all authorization checks.
-- No custom `User` table. All ownership foreign keys point directly at
-  `auth.users.id` (UUID).
+### Authentication Flow
+1. The frontend authenticates with Supabase Auth and receives a JWT
+2. Every API request includes the JWT in the `Authorization` header
+3. The `get_current_user` dependency in FastAPI decodes and verifies the JWT using the Supabase JWT secret
+4. The extracted `user_id` (UUID) is injected into route handlers for ownership checks
 
-### 3.2 AI Provider Abstraction
-One interface, many configured instances — no per-vendor branching:
+### Review Engine (Async Background Processing)
+The review engine is designed to be **non-blocking**:
+
+```
+1. User triggers review → POST /projects/{id}/reviews
+2. Backend creates a Review record with status="running"
+3. BackgroundTask is spawned (FastAPI's built-in)
+4. For each file in scope:
+   a. Context Builder assembles the file content + metadata
+   b. Prompt Builder selects the template (security/performance/quality)
+   c. Provider Client sends the request to the configured AI endpoint
+   d. Response is parsed (JSON extraction from AI output)
+   e. Issues are saved to the database with severity, line numbers, recommendations
+5. Review status is updated to "completed" or "failed"
+6. Frontend polls every 3 seconds and updates the UI when done
+```
+
+### AI Provider Client
+The `provider_client.py` is a **generic OpenAI-compatible client** that works with any endpoint following the `/chat/completions` format:
 
 ```python
-class AiProvider:
-    async def chat_completion(self, messages: list[dict], **options) -> dict:
-        ...
-
-class OpenAiCompatibleProvider(AiProvider):
-    def __init__(self, base_url: str, api_key: str, model: str):
-        ...
-    async def chat_completion(self, messages, **options):
-        # POST {base_url}/chat/completions via httpx.AsyncClient
-        ...
+# The same client works for:
+# - OpenAI (https://api.openai.com/v1)
+# - LM Studio (http://localhost:1234/v1)
+# - Ollama (http://localhost:11434/v1)
+# - Any compatible endpoint
 ```
-`AiProviderConfig` rows (base_url, api_key, model_name) are the only thing that
-differs between OpenAI / LM Studio / Ollama / OpenRouter — never hardcoded.
 
-### 3.3 Review Engine Flow
-1. Assemble context: selected file(s) content, or all files for project-scope.
-2. Build system prompt per template (Security / Performance / Code Quality / Tech Debt /
-   Architecture) — prompt instructs strict JSON output matching the `Issue` schema,
-   **including `function_name`, `line_start`, `line_end` where identifiable.**
-3. Call provider async; parse JSON.
-   - **Rate Limiting:** The `provider_client` automatically intercepts `429 Too Many Requests`, extracts the retry window, and performs exponential backoff to ensure massive codebases don't crash the pipeline.
-   - **Context Limits:** Files exceeding model limits (`413` or `400 context_length_exceeded`) are gracefully caught and recorded as a "Low Severity" issue (notifying the user the file was skipped) rather than halting the review.
-4. **Project-scope reviews (map-reduce):** review files individually/in batches, then run
-   one synthesis call over per-file results to produce the aggregated `Review.summary`.
-5. **Background execution:** The `run_review` HTTP endpoint immediately returns `202 Accepted` and delegates the actual work (steps 1-4) to FastAPI's `BackgroundTasks`, preventing `socket hang up` or server timeouts on massive repositories.
-6. Persist: one `Review` row + N `Issue` rows (joined via `review_id`), each `Issue`
-   gets a generated `command_slug` (see §3.5).
-
-### 3.4 Chat With Code
-- Single project-wide `ChatSession` per project (no separate "issue-scoped" session type).
-- User references specific issues/files via **slash commands** typed in the chatbox
-  (e.g. `/auth-jwt-validateSession`), which are project-wide — any command can be
-  referenced regardless of which node is currently selected.
-- Typing `/` triggers autocomplete against `GET /projects/{id}/issues/commands`
-  (fuzzy-matched against `command_slug`).
-- The **issue sidebar** is a read-only filtered view (commands for the current node only)
-  of this same underlying command list — it does not drive a different chat scope.
-- Context assembly for a chat message: simple keyword/filename overlap retrieval across
-  project files, plus full resolution of any referenced issue(s)/file(s) by slug into the
-  prompt context.
-- `ChatMessage.issue_id` (nullable) records which issue(s) a message referenced, for
-  history/traceability — the session itself stays unscoped.
-
-### 3.5 Slash-Command Slug Generation
-Priority order, first that yields uniqueness wins:
-1. `slugify(issue.title)-slugify(issue.function_name)` — e.g. `hardcoded-secret-getUserToken`
-2. `slugify(issue.title)-L{line_start}` — when no function name is attributable
-3. `slugify(issue.title)-{n}` — numeric suffix, for true file/project-level issues with
-   neither a function nor a line anchor
-
-Slugs are unique **per project** (not globally), generated at issue-creation time and
-stored on the `Issue` row — never computed on the fly.
-
-### 3.6 Tree + Severity Coloring
-- Files are stored **flat** (`File.path` = full relative path); the nested tree is a
-  **derived view**, not a separate DB table.
-- `GET /projects/{id}/tree` joins `File` with `Issue`, computing **highest severity per
-  file from the latest review that included that file** (not the latest review row
-  globally — a window function partitioned by `file_path`, ordered by review
-  `created_at desc`).
-- Neutral (no issues) files render with no severity dot / default file icon — not a pure
-  white fill, to keep contrast on light backgrounds.
-- Tree JSON can optionally be cached on `Project.tree_json`, recomputed on re-upload or
-  new review completion — not required for v1.
-
-### 3.7 Review Search
-`GET /reviews?project_id=&query=&severity=&template=&from=&to=`
-- Full-text-ish match on `Review.summary` / `Issue.title` / `Issue.description`.
-- Filters: severity, template type, date range.
-- Toolbar search button + filter chips in the frontend, not a redesign of the tree view —
-  the tree remains the primary current-state view; search is the cross-review/historical
-  view (older issues superseded by re-review are no longer visible on the tree, but
-  remain searchable).
+Key design decisions:
+- Uses `httpx.AsyncClient` for non-blocking HTTP
+- Configurable timeout (120s for large codebases)
+- Graceful error handling with provider-specific error messages
+- JSON extraction from AI responses with fallback parsing
 
 ---
 
 ## 4. Database Design
 
-See `schema.sql` for full DDL. Summary of tables:
+### Entity-Relationship Diagram
 
-| Table | Purpose |
+```
+auth.users (Supabase-managed)
+    │
+    ├──── 1:N ──── ai_provider_configs
+    │                    │
+    ├──── 1:N ──── projects
+    │                    │
+    │               ├── 1:N ──── files
+    │               │              │
+    │               ├── 1:N ──── reviews ──── N:M ──── review_files
+    │               │              │
+    │               │         ├── 1:N ──── issues (FK → file)
+    │               │
+    │               └── 1:N ──── chat_sessions
+    │                              │
+    │                         └── 1:N ──── chat_messages
+    │
+    └── projects.ai_provider_config_id → ai_provider_configs.id
+```
+
+### Table Descriptions
+
+| Table | Purpose | Key Fields |
+|---|---|---|
+| `ai_provider_configs` | User-defined AI endpoints | `base_url`, `api_key`, `model_name`, `temperature`, `max_tokens` |
+| `projects` | Top-level project container | `name`, `description`, FK to `ai_provider_configs` |
+| `files` | Uploaded source code files | `path`, `filename`, `language`, `content`, `size_bytes` |
+| `reviews` | Review execution record | `scope`, `template_type`, `status`, `summary` |
+| `issues` | Individual review findings | `title`, `severity`, `line_start`, `line_end`, `recommendation`, `evidence` |
+| `review_files` | Many-to-many: reviews ↔ files | Junction table |
+| `chat_sessions` | AI chat conversation container | FK to `projects` |
+| `chat_messages` | Individual chat messages | `role`, `content`, optional FK to `issues` |
+
+### Design Decisions
+- **UUIDs everywhere** — All primary keys are UUID v4 for security (no enumerable IDs) and distributed-system readiness
+- **Cascading deletes** — Deleting a project cascades to files, reviews, issues, and chat sessions
+- **Soft references** — `ai_provider_config_id` uses `ON DELETE SET NULL` so deleting a provider doesn't break projects
+- **Content in DB** — File contents are stored directly in the `files` table rather than on disk, simplifying deployment and enabling full-text search capabilities
+
+---
+
+## 5. AI Integration Flow
+
+### Review Flow (Detailed)
+
+```
+                    ┌──────────────────┐
+                    │   User selects   │
+                    │  scope + template │
+                    └────────┬─────────┘
+                             │
+                    ┌────────▼─────────┐
+                    │  POST /reviews   │
+                    │  (creates record)│
+                    └────────┬─────────┘
+                             │
+                    ┌────────▼─────────┐
+                    │ BackgroundTask   │
+                    │ spawned          │
+                    └────────┬─────────┘
+                             │
+              ┌──────────────▼──────────────┐
+              │  For each file in scope:     │
+              │                              │
+              │  1. Build context string     │
+              │     (path + content)         │
+              │                              │
+              │  2. Select prompt template   │
+              │     (security/perf/quality)  │
+              │                              │
+              │  3. Call AI provider          │
+              │     POST /chat/completions   │
+              │                              │
+              │  4. Extract JSON from        │
+              │     AI response              │
+              │                              │
+              │  5. Parse issues array       │
+              │     with severity/lines      │
+              │                              │
+              │  6. Delete stale issues      │
+              │     for same file+category   │
+              │                              │
+              │  7. Save new issues to DB    │
+              └──────────────┬──────────────┘
+                             │
+                    ┌────────▼─────────┐
+                    │  Update review   │
+                    │  status →        │
+                    │  "completed"     │
+                    └──────────────────┘
+```
+
+### Chat Flow
+1. User types a question in the AI Chat panel
+2. Context is assembled based on the selected mode:
+   - **Issue mode**: The specific issue + its file content
+   - **File mode**: The currently open file's content
+   - **Project mode**: A summary of the project's file structure
+3. The assembled context + user message + conversation history is sent to the AI provider
+4. The AI response is streamed back and displayed in the chat UI
+
+### Prompt Engineering
+Each review template uses a carefully crafted system prompt that:
+- Defines the review persona (security auditor, performance engineer, code quality reviewer)
+- Specifies the exact JSON output format expected
+- Lists the specific categories of issues to look for
+- Requests line-number references for precise annotations
+
+---
+
+## 6. Key Engineering Decisions
+
+| Decision | Rationale |
 |---|---|
-| `auth.users` | Managed entirely by Supabase — not modeled by us |
-| `projects` | Owner ref → `auth.users.id`, name, description, created_at, optional `ai_provider_config_id` |
-| `ai_provider_configs` | User's saved provider configs (base_url, api_key, model_name), reusable across projects |
-| `files` | Flat file rows: path, filename, language, size, content |
-| `reviews` | One row per review run: scope, template_type, summary, created_at |
-| `issues` | One row per detected issue: severity, function_name, line_start/end, command_slug, recommendation |
-| `review_files` | Join table: which files were included in a given review |
-| `chat_sessions` | One per project (project-wide, unscoped) |
-| `chat_messages` | role, content, optional `issue_id` reference |
-
-**Key design decisions:**
-- Flat file storage + derived tree avoids over-modeling a self-referencing folder table.
-- Issues are first-class rows (not JSON blobs) so they can be individually addressed,
-  slugged, and referenced by chat commands.
-- Provider configs are user-scoped and reusable, decoupled from any single project.
+| **FastAPI over NestJS** | Python's ecosystem for AI/ML integration is stronger; async-first design matches our non-blocking review engine |
+| **Supabase over raw PostgreSQL** | Managed auth, instant API, row-level security, and hosted Postgres — faster time to production |
+| **SQLModel over raw SQLAlchemy** | Combines Pydantic validation with SQLAlchemy ORM — single model definition for both API schemas and DB models |
+| **Next.js API proxy** | Eliminates CORS issues entirely; the browser only talks to one origin |
+| **Background tasks over queues** | For a 3-day assessment, FastAPI's `BackgroundTasks` provides sufficient async processing without the operational overhead of Redis/Celery |
+| **File content in DB** | Simplifies the architecture (no file system management), enables future full-text search, and works naturally with Supabase's managed Postgres |
+| **No external state management** | React's built-in `useState` + `useContext` handles all state needs without adding Redux/Zustand complexity |
+| **Generic AI client** | A single `provider_client.py` works with any OpenAI-compatible endpoint — no provider-specific code paths |
 
 ---
 
-## 5. AI Integration Flow (End-to-End)
+## 7. Security Considerations
 
-```
-Upload ZIP or Paste GitHub URL → extract/clone → skip noise dirs → flat File rows
-    → user triggers review (single/multi/project scope + template)
-    → HTTP 202 returned immediately, review_engine runs as a BackgroundTask
-    → review_engine assembles context → provider_client calls configured AI endpoint
-    → provider_client auto-retries on 429s and skips 413s gracefully
-    → parse structured JSON → persist Review + Issue rows (with generated slugs)
-    → GET /tree recomputes severity-per-file (latest review only)
-    → user clicks node → sidebar lists issues → center panel tabs Code/Issue
-    → user opens chat → types `/` → autocomplete over project-wide command list
-    → chat_context resolves referenced issues/files → provider_client call → response
-```
-
----
-
-## 6. Scope Decisions Log
-
-*(kept here for interview reference — decisions made deliberately, not by omission)*
-
-- **FastAPI over NestJS** — native async fits AI provider calls well.
-- **Supabase Auth over hand-rolled JWT** — reduces auth surface area, more time for the
-  review pipeline.
-- **Supabase Postgres, no separate `User` table** — `auth.users.id` used directly as FK.
-- **Flat file storage + derived tree**, not a folder table — simpler, single source of truth.
-- **BackgroundTasks for Reviews** — prevents long-running AI calls from exhausting HTTP timeouts.
-- **GitHub URL + ZIP upload** — added GitHub cloning support natively via `git clone --depth 1` for drastically improved UX.
-- **Local disk for extracted files**, not Supabase Storage — direct filesystem access
-  needed by the extractor/tree builder; would move to Supabase Storage under an ephemeral
-  deployment target (deployment target TBD, noted as a documented tradeoff).
-- **Reviews are repeatable**, not one-time — required by the brief's "Review History"
-  section; severity coloring uses latest-review-per-file, not first-ever review.
-- **Chat is project-wide, not issue-scoped** — issue references happen via slash command
-  inside the single chat, rather than separate chat sessions per issue.
-- **Bonus features chosen:** Technical Debt Scanner, Architecture Analysis — both reuse
-  the existing review pipeline/templates rather than requiring new infrastructure.
+- **JWT verification** on every API request with Supabase JWT secret
+- **User isolation** — All queries filter by `user_id` to prevent cross-user data access
+- **No secrets in code** — All sensitive values loaded from environment variables
+- **API key encryption** — Provider API keys are stored in the database (Supabase provides at-rest encryption)
+- **Input sanitization** — File uploads are filtered for binary content and size limits
+- **CORS** — Strict origin allowlist configured via environment variable

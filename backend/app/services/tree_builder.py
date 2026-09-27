@@ -33,12 +33,14 @@ def build_tree(files: list[FileModel]) -> list[dict]:
                     # Leaf node (file)
                     # Compute highest severity for this file from its issues
                     file_severity = None
+                    file_issue_count = 0
                     if hasattr(file, "issues") and file.issues:
                         rank = {"critical": 4, "high": 3, "medium": 2, "low": 1}
                         file_severity = max((i.severity for i in file.issues if i.severity), key=lambda s: rank.get(s, 0), default=None)
                         # We use .value if it's an enum, otherwise just string
                         if hasattr(file_severity, "value"):
                             file_severity = file_severity.value
+                        file_issue_count = len(file.issues)
 
                     current[part] = {
                         "_type": "file",
@@ -47,10 +49,12 @@ def build_tree(files: list[FileModel]) -> list[dict]:
                         "_language": file.language,
                         "_size": file.size_bytes,
                         "_severity": file_severity,
+                        "_issue_count": file_issue_count,
                     }
                 else:
                     # Directory node
-                    current[part] = {"_type": "directory", "_children": {}}
+                    dir_path = "/".join(parts[:i+1])
+                    current[part] = {"_type": "directory", "_path": dir_path, "_children": {}}
 
             if i < len(parts) - 1:
                 node = current[part]
@@ -70,6 +74,7 @@ def build_tree(files: list[FileModel]) -> list[dict]:
                     "language": data["_language"],
                     "size": data["_size"],
                     "severity": data["_severity"],
+                    "issueCount": data.get("_issue_count", 0),
                 })
             else:
                 children = to_tree(data.get("_children", {}))
@@ -82,10 +87,14 @@ def build_tree(files: list[FileModel]) -> list[dict]:
                     rank = {"critical": 4, "high": 3, "medium": 2, "low": 1}
                     dir_severity = max(child_severities, key=lambda s: rank.get(s, 0))
 
+                dir_issue_count = sum(c.get("issueCount", 0) for c in children)
+
                 nodes.append({
                     "name": name,
                     "type": "directory",
+                    "path": data.get("_path"),
                     "severity": dir_severity,
+                    "issueCount": dir_issue_count,
                     "children": children,
                 })
 

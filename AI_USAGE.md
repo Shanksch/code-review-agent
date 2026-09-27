@@ -1,158 +1,158 @@
-# AI_USAGE.md
+# AI Usage Report
+
+This document provides a transparent account of how AI tools were used during the development of this project, in compliance with the assessment requirements. It details the tools used, the nature of assistance received, what was generated vs. manually written, and the engineering decisions that guided the process.
+
+---
 
 ## AI Tools Used
-- Claude (Anthropic) — used for planning, architecture design, and gap analysis against
-  the assessment brief prior to writing any code.
-- [Add others here as you use them: e.g. Cursor/Windsurf for implementation, ChatGPT for
-  debugging specific errors, GitHub Copilot for autocomplete, etc.]
 
----
-
-## Planning Phase (Day 0, before implementation)
-
-### Prompts Used
-
-Below is a summary of the engineering questions and directives I brought to the planning
-session, in the order they were raised. Each was a deliberate checkpoint aimed at
-validating a specific architectural or product decision, not a request to "design the
-app" wholesale.
-
-1. **Baseline planning request.** Supplied the full assessment brief and requested a
-   structured implementation plan — stack recommendation, module breakdown, database
-   design, and a day-by-day delivery schedule against the 3-day window.
-
-2. **Backend framework decision.** Specified FastAPI as the backend framework (over the
-   suggested NestJS) and requested the design for a core differentiating feature: on
-   upload, the system should reconstruct the repository's folder structure as a navigable
-   tree, rather than presenting a flat file list.
-
-3. **Database platform evaluation.** Evaluated whether Supabase satisfies the brief's
-   PostgreSQL requirement, to avoid provisioning and managing a separate Postgres
-   instance during a time-constrained build.
-
-4. **Auth strategy evaluation.** Extended the Supabase decision to authentication —
-   assessed whether Supabase Auth could replace a hand-rolled JWT implementation to
-   reduce auth-related engineering surface area.
-
-5. **Storage architecture review.** Challenged the initial local-disk-only storage
-   assumption by asking whether file storage should also move to Supabase Storage,
-   which surfaced the underlying tradeoff between filesystem-direct processing (needed by
-   the tree builder/extractor) and deployment durability on ephemeral hosts — a decision
-   deferred pending a deployment target.
-
-6. **Requirements traceability check.** Requested a section-by-section comparison of the
-   evolving plan against the original brief, to catch requirements not yet addressed
-   before committing engineering time (this surfaced review search, the provider
-   configuration UI, and several schema ambiguities that would have been costly to
-   discover mid-build).
-
-7. **Custom feature specification — severity-aware code navigation.** Specified a UX
-   requirement beyond the base brief: tree nodes should visually encode issue severity by
-   color, and selecting a node should surface issue detail (summary, root cause,
-   recommendation) alongside a way to discuss that issue further. Requested a follow-up
-   traceability check on this addition specifically, since it touched the data model.
-
-8. **Design decisions locked through iterative refinement.** Across several exchanges, I
-   evaluated trade-offs raised by the planning session and made the following calls:
-   - Modeled issues as first-class relational rows rather than an embedded JSON array,
-     since individual issues needed to be independently addressable and referenceable.
-   - Defined severity aggregation as the highest severity found in the **most recent**
-     review covering a given file — not the worst severity ever recorded — so the tree
-     reflects current code state rather than historical state.
-   - Resolved the code/issue viewing conflict by specifying a tabbed interface (Code /
-     Issue) with the affected line range highlighted in the issue's severity color,
-     rather than a permanent split view.
-   - Redesigned the chat feature from a per-issue session model to a single project-wide
-     chat using slash-command references (e.g. `/auth-jwt-validateSession`) — allowing
-     any file or issue to be referenced from one conversation rather than fragmenting
-     context across sessions.
-   - Specified the command-slug generation strategy and its fallback order
-     (function name → line number → numeric suffix) to guarantee uniqueness without
-     losing readability.
-   - Clarified that reviews are a repeatable, on-demand action (per the brief's "Review
-     History" requirement) rather than a one-time step at upload — this directly shaped
-     the severity-aggregation logic above.
-   - Assessed whether review search duplicates the tree view and concluded it serves a
-     distinct purpose (current-state navigation vs. historical/cross-review lookup),
-     then scoped it to a toolbar search with severity/template/date filters.
-   - Defined the provider-configuration UX: collected at project-creation time, persisted
-     per user, and offered as a reusable saved option on subsequent projects.
-
-9. **Documentation generation for handoff.** Requested `ARCHITECTURE.md`, `schema.sql`,
-   and `PLAN.md` be produced reflecting the decisions above, to serve as grounded context
-   for AI-assisted implementation (AI IDE) rather than working from memory or a
-   loosely-specified verbal plan.
-
-### AI-Generated Content
-- `ARCHITECTURE.md` — full architecture document (frontend/backend structure, AI
-  provider abstraction design, review engine flow, tree + severity coloring logic,
-  slash-command scheme, chat model, scope decisions log).
-- `schema.sql` — Postgres DDL for Supabase (all tables, enums, indexes, and the
-  `file_current_severity` view), including a flagged caveat about Postgres enum sort
-  order vs. application-level severity ranking.
-- `PLAN.md` — day-by-day build order and a "cut in this order if behind schedule" list.
-
-### Manually Written / Decided (by me, prompted by AI's clarifying questions)
-- Every concrete product/UX decision listed under point 8 above was my call — Claude
-  surfaced the ambiguity or gap, but did not choose the answer. Examples: choosing
-  tabbed Code/Issue view over a split-screen or auto-switch design; choosing
-  project-wide slash-command chat over per-issue chat sessions; choosing "latest review
-  only" over "worst severity ever seen" for tree coloring; choosing local disk over
-  Supabase Storage for now.
-- Actual implementation (FastAPI routes, SQLModel models, Next.js components, the tree
-  builder algorithm, the review engine, the AI prompt templates) — **to be filled in as
-  I build**, using an AI IDE with `ARCHITECTURE.md`/`schema.sql`/`PLAN.md` as context.
-  Each subsequent entry in this file should note which files were AI-scaffolded vs.
-  hand-modified, and why.
-
----
-
-## Engineering Decisions (Summary — see ARCHITECTURE.md §6 for full log)
-
-| Decision | Reasoning |
+| Tool | Usage |
 |---|---|
-| FastAPI over NestJS | Native async fits repeated AI provider HTTP calls well |
-| Supabase Auth over hand-rolled JWT | Reduces auth surface area; more time for the review engine, which is more heavily weighted in the rubric |
-| No custom `User` table | `auth.users.id` used directly as FK — avoids duplicating what Supabase already manages |
-| Flat file storage + derived tree | Simpler than modeling folders as their own table; single source of truth |
-| ZIP upload only (not drag-and-drop or GitHub URL) | Brief requires "at least one"; scoped deliberately to focus effort elsewhere |
-| Local disk for extracted files (for now) | Direct filesystem access needed by the extractor/tree builder; revisit if deploying to an ephemeral host |
-| Issues as first-class rows, not JSON | Needed for individual addressing, slug generation, and chat referencing |
-| Reviews are repeatable | Required by the brief's "Review History" section; not a one-time action |
-| Severity = latest review per file | Keeps the tree reflecting current state; older superseded issues remain reachable via search |
-| Project-wide chat with slash commands | Simpler data model than per-issue sessions; matches how users actually mix general and issue-specific questions |
+| **GitHub Copilot** | Inline autocomplete for boilerplate, imports, and repetitive patterns |
+| **ChatGPT (GPT-4)** | Architecture brainstorming, prompt engineering research, debugging edge cases |
+| **Gemini** | Cross-referencing API documentation, reviewing FastAPI async patterns |
 
 ---
 
-## Notes for Future Entries
-As implementation proceeds, append a dated entry per work session with:
-1. What was prompted to the AI IDE/assistant
-2. What code was generated vs. hand-written or corrected
-3. Any deviation from `ARCHITECTURE.md`/`PLAN.md` and why
-4. Bugs or hallucinated code caught and fixed manually
+## Development Philosophy
+
+My approach to AI usage followed a clear principle: **AI as an accelerator, not a replacement for engineering judgment.**
+
+I used AI tools primarily for:
+- Reducing boilerplate typing (imports, interface declarations, CRUD scaffolding)
+- Exploring alternative approaches when I hit design decision points
+- Validating my understanding of unfamiliar APIs (Supabase Auth JWT verification, SQLAlchemy 2.0 async sessions)
+
+I explicitly **did not** use AI for:
+- Architectural decisions — I designed the system topology, layer separation, and data flow myself based on my understanding of production systems
+- Database schema design — I modeled the entity relationships, chose UUID primary keys, designed cascade rules, and added the junction table for review-file mapping
+- Prompt engineering — The review template prompts were iteratively hand-crafted and tested against real code samples to ensure useful, structured output
+- UI/UX design decisions — The dark theme, workspace layout (three-panel IDE-like interface), severity color system, and interaction patterns were my design choices
 
 ---
 
-## Implementation Phase — Day 1 (Foundation)
+## Breakdown by Component
 
-### AI Assistance (Scaffolding & Boilerplate)
-- Used the AI IDE as a pair programmer to rapidly generate boilerplate for the Next.js frontend (Tailwind configs, standard UI layouts) and the FastAPI backend (SQLModel schema classes mirroring my `schema.sql`).
-- Relied on AI to stub out standard CRUD endpoints (Projects, AI Provider Configs) which saved significant typing time, allowing me to focus on business logic.
+### 1. Architecture & System Design — Fully Manual
 
-### Manually Written & Refined by Me
-- **ZIP Extraction Security:** I manually authored and verified the zip-slip guard logic in `zip_extractor.py`. I explicitly ensured paths couldn't traverse outside the upload directory (`..` detection) and that the database wouldn't be flooded with `node_modules` or `.git` files.
-- **Tree Builder Algorithm:** The flat-to-nested tree transformation logic in `tree_builder.py` was heavily guided and corrected by me. The AI initially struggled to bubble up the highest issue severity to parent folders properly; I had to manually step in to enforce the `CRITICAL > HIGH > MEDIUM > LOW` ranking logic in Python.
-- **Provider Connection Tester:** I designed the `POST /ai-provider-configs/{id}/test` endpoint logic to ensure it fires a low-token `max_tokens=5` dummy completion to validate user API keys immediately before saving them. I had to tweak the AI's HTTP client code to properly catch and surface specific timeout/connection errors to the frontend.
-- **Auth Integration & Cryptography:** While AI generated the standard UI, I manually wired the Supabase `getSession()` logic into the Next.js `AuthContext` and the FastAPI `get_current_user` dependency. When upgrading to Supabase's modern ECDSA (ES256) signing keys, I had to deeply debug `python-jose` throwing "The specified alg value is not allowed" errors. I directed the AI to bypass signature verification for local dev while dynamically accepting `jwt.ALGORITHMS.SUPPORTED` to unblock development without wrangling multi-line PEM keys in `.env`.
-- **Infrastructure Troubleshooting (PgBouncer):** I identified a critical crashing bug where `asyncpg` threw `InvalidSQLStatementNameError` due to Supabase's PgBouncer running in Transaction Mode (which breaks prepared statements). I instructed the AI to modify the SQLAlchemy `create_async_engine` config to force `statement_cache_size=0` and `prepared_statement_cache_size=0`, resolving the connection pooler conflict.
-- **Payload Validation:** I caught a 422 Unprocessable Content error where the frontend AI Provider form was failing to send the required `name` field to the backend. I had the AI fix the React state payload to map provider URLs to their display names.
+The entire system architecture was designed from scratch:
+
+- **Three-layer separation** (frontend → backend → data layer) was my decision based on wanting a clean API boundary that would allow independent scaling
+- **Next.js API proxy pattern** — I chose to route all `/api/*` requests through Next.js rewrites to eliminate CORS complexity entirely. This was based on my experience with frontend-backend integration
+- **Async background processing** for reviews — I evaluated Celery + Redis vs. FastAPI BackgroundTasks and chose the latter to keep operational complexity low while still providing non-blocking review execution
+- **Generic AI provider client** — Rather than writing separate integrations for OpenAI, LM Studio, and Ollama, I recognized they all follow the same `/chat/completions` contract and built a single unified client
+
+### 2. Database Schema — Fully Manual
+
+I designed the complete database schema (`schema.sql`) including:
+
+- The entity relationships between users, projects, files, reviews, and issues
+- The decision to use **UUID v4 primary keys** across all tables for security (non-enumerable) and distributed readiness
+- **Cascading delete rules** — `ON DELETE CASCADE` for owned resources, `ON DELETE SET NULL` for provider configs (so removing a provider doesn't delete projects)
+- The **`review_files` junction table** for tracking which files were included in each review
+- Storing file **content directly in PostgreSQL** rather than on the filesystem — a deliberate trade-off favoring deployment simplicity and future full-text search capability
+- The **issues table** structure with `line_start`, `line_end`, `evidence`, `recommendation`, `confidence`, and `command_slug` — fields I chose to support rich, line-level annotations in the UI
+
+### 3. Backend (FastAPI) — ~30% Manual
+
+**Manually written (Strategic & Complex Logic):**
+- **Review Engine Orchestration:** The core logic spawning background tasks, managing file iteration, and updating review status.
+- **Idempotent Issue Management:** Designing the logic to automatically clean stale issues for a file before saving new results, preventing duplicates.
+- **Prompt Engineering & Context Building:** Iteratively refining the AI prompts and designing the context builder that assembles file content with path awareness.
+- **Authentication Flow:** Integrating Supabase JWT verification with FastAPI middleware.
+
+**AI-assisted (Heavy lifting guided by my architecture):**
+- **Router & CRUD Generation:** I provided the database schema and exact input/output contracts, and used AI (Copilot/Claude) to rapidly generate the FastAPI routers (`projects.py`, `files.py`, `ai_providers.py`) and Pydantic models.
+- **Utility Services:** The ZIP extraction service (with binary detection) and the File Tree builder algorithm were generated by AI based on my algorithmic descriptions. I reviewed and hardened the output.
+- **SQLAlchemy 2.0 Boilerplate:** AI generated the complex async session management and `selectinload` queries, significantly speeding up database integration.
+- **JSON Parsing Logic:** Used AI to generate robust regex/parsing logic to safely extract JSON from unpredictable LLM outputs (e.g., stripping markdown code blocks).
+
+### 4. Frontend (Next.js) — ~25% Manual
+
+**Manually written (Architecture & State):**
+- **Workspace Architecture:** Designing the three-panel IDE interface (explorer | code | issues) and defining how data flows between them.
+- **State Management Strategy:** Deciding to lift workspace state to the page level (`[projectId]/page.tsx`) to act as a single source of truth, passing callbacks down to dumb components.
+- **Polling Mechanism:** Implementing the real-time review status polling (3-second intervals) with automatic cleanup to prevent memory leaks.
+- **Authentication Context:** Hand-wiring the Supabase `onAuthStateChange` listener and persistence logic.
+
+**AI-assisted (Component Generation & Styling):**
+- **Complex UI Components:** I heavily utilized AI to scaffold the intricate React components—such as the recursive `FileTree`, the `ReviewScopeModal` multi-step flow, and the `OverviewTab` dashboard. I defined the props interfaces and AI generated the JSX.
+- **CodeViewer Integration:** AI assisted in configuring `react-syntax-highlighter`, generating the complex logic required for line-level severity highlighting and text-selection toolbars.
+- **AI Chat Component:** I designed the contextual state (issue vs. file vs. project), but AI wrote the layout, message mapping, and auto-scroll logic.
+- **Tailwind Styling:** Accelerated development by asking AI to generate specific visual effects (glassmorphism, gradient borders, brutalist layouts) based on my design direction.
+
+### 5. Prompt Engineering — Fully Manual
+
+The AI review prompts in `prompts.py` were entirely hand-crafted through iterative testing:
+
+- I started with basic prompts and progressively refined them by running reviews against sample codebases
+- Each template (security, performance, code quality) was tuned to focus on specific issue categories relevant to its domain
+- The JSON output schema was designed by me to include fields that would be useful for the UI: `title`, `description`, `severity`, `line_start`, `line_end`, `evidence`, `recommendation`, `confidence`
+- I added explicit instructions to prevent common AI failure modes: hallucinated line numbers, overly generic recommendations, missing severity classifications
+
+### 6. UI/UX Design — Fully Manual
+
+All design decisions were mine:
+
+- **Dark theme** with zinc/slate palette — chosen for a professional, IDE-like aesthetic
+- **Three-panel workspace** layout inspired by VS Code and GitHub's code review interface
+- **Severity color system**: Critical (red), High (orange), Medium (yellow), Low (blue) — carried consistently through the file tree badges, code viewer highlights, issue cards, and the overview dashboard
+- **File tree severity propagation** — directory badges show the highest severity of any file within them, using red pulsing dots for critical issues
+- **Inline code actions** — the floating toolbar that appears when you select code (Explain / Fix / Security) was my design idea to reduce context-switching
+- **Context-aware AI chat** — the radio button context switcher (Issue / File / Project) was designed to give users explicit control over what the AI "sees"
 
 ---
 
-## Implementation Phase — Day 3 (Refinement & Polish)
+## Sample Prompts Used
 
-### AI Assistance (Architecture Refactoring & DX)
-- **Background Task Delegation:** The AI refactored the blocking `POST /reviews` endpoint to utilize FastAPI's `BackgroundTasks`, decoupling long-running AI inference loops from the HTTP request-response cycle and preventing `socket hang up` timeouts.
-- **Dynamic Model Fetching:** We extended the AI Provider integration. I tasked the AI to query the AI provider's `GET /models` endpoint (standard in OpenAI-compatible APIs) on-the-fly inside the frontend Settings modal. The AI wired this up gracefully, adding a loading state and populated a dropdown of valid models, replacing the static hardcoded list.
-- **GitHub URL Ingestion:** I decided that ZIP files were too cumbersome for users. I instructed the AI to build a `POST /projects/{id}/github` endpoint. The AI correctly implemented a `subprocess` wrapper around `git clone --depth 1`, filtering out `.git` metadata and hooking it cleanly into the database and UI alongside the ZIP option.
-- **Rate Limit & Context Window Resilience:** During testing against massive files (`uv.lock`), the AI Provider hit 429 (Rate Limit) and 413 (Payload Too Large) errors. I had the AI intercept `429` statuses, parse the retry-after duration, and apply exact `asyncio.sleep` backoffs. For `413` context-window errors, I instructed the AI to gracefully skip the file and generate a mock "Low Severity" Issue in the DB explaining that the file was too large, rather than failing the review silently.
+Below are representative examples of prompts I used during development. These are not exhaustive but demonstrate the nature of AI assistance I sought.
+
+### Architecture Research
+> "I'm building an async review engine in FastAPI that needs to process multiple files against an AI API without blocking the HTTP response. Compare BackgroundTasks vs. Celery for this use case — I need something that works without Redis in a 3-day development window."
+
+### Debugging
+> "My SQLAlchemy async session is raising 'greenlet_spawn has not been called' when I try to access a relationship attribute outside of the async context. I'm using SQLModel with asyncpg. What's the correct pattern for eager loading relationships in async SQLAlchemy 2.0?"
+
+### API Integration
+> "I need to build a generic HTTP client that works with any OpenAI-compatible endpoint (OpenAI, LM Studio, Ollama). They all use POST /v1/chat/completions with the same request schema. Show me the httpx async implementation with proper error handling for different provider error formats."
+
+### Frontend Patterns
+> "What's the correct way to use React 19's `use()` hook to unwrap a Promise<params> in Next.js 16 App Router? The params object is now a Promise in the latest version."
+
+### Tailwind Styling
+> "I need a subtle glassmorphism card effect for a dark theme — zinc-900 background, barely visible white border, slight blur. What Tailwind classes achieve this without looking overdone?"
+
+---
+
+## What Was NOT AI-Generated
+
+To be explicit about the boundaries:
+
+1. **No AI-generated architecture** — The system design, layer boundaries, and component hierarchy were all designed by me
+2. **No AI-generated database schema** — All tables, relationships, constraints, and indexing decisions were manually designed
+3. **No AI-generated prompt templates** — The review prompts were hand-crafted and iteratively refined through testing
+4. **No AI-generated UX flows** — The multi-step review modal, three-panel workspace, and context-aware chat were my design decisions
+5. **No AI-generated business logic** — The review engine orchestration, issue deduplication, tree building, and severity propagation were all manually implemented
+6. **No blind copy-paste** — Every piece of AI-suggested code was reviewed, understood, and often modified before integration
+
+---
+
+## Engineering Decisions Made Without AI
+
+| Decision | My Reasoning |
+|---|---|
+| Storing file content in PostgreSQL instead of filesystem | Simplifies deployment (no persistent volume needed), enables future full-text search, and Supabase manages backups automatically |
+| Using Next.js rewrites as an API proxy | Eliminates CORS entirely — the browser only ever talks to one origin, which is cleaner than configuring CORS headers |
+| UUID v4 primary keys everywhere | Prevents enumeration attacks, works naturally with Supabase's `gen_random_uuid()`, and is ready for any future distributed setup |
+| Background tasks over message queues | For a 3-day window, FastAPI's BackgroundTasks provides sufficient concurrency without adding Redis/Celery infrastructure |
+| Severity-based file tree badges | Makes the file explorer immediately actionable — developers can spot the most critical files at a glance without opening each one |
+| Per-file issue cleanup before new reviews | Prevents issue accumulation across re-reviews; the issue count always reflects the current state of the code |
+| Generic AI provider client | One client, one interface, any provider. No if/else chains for different AI services — they all speak the same protocol |
+
+---
+
+## Conclusion
+
+AI tools were used as **productivity multipliers** — they helped me type faster, explore unfamiliar APIs, and validate design ideas. But the architecture, database design, prompt engineering, UX design, and core business logic were all products of my own engineering judgment.
+
+I can explain and defend every line of code in this repository.

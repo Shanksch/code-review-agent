@@ -45,8 +45,11 @@ async def run_review(
     project_id: UUID,
     user_id: UUID,
     db: AsyncSession,
-    scope: ReviewScope = ReviewScope.project
+    scope: ReviewScope = ReviewScope.project,
+    file_ids: list[UUID] | None = None,
+    template_type: TemplateType = TemplateType.security
 ) -> Review:
+    from app.models import ReviewFile
     # 1. Fetch project and config
     stmt = select(Project).where(Project.id == project_id, Project.user_id == user_id)
     project = (await db.execute(stmt)).scalars().first()
@@ -68,17 +71,24 @@ async def run_review(
         project_id=project_id,
         user_id=user_id,
         scope=scope,
-        template_type=TemplateType.security,
+        template_type=template_type,
         status="running"
     )
     db.add(review)
     await db.commit()
     await db.refresh(review)
 
-    # Launch background processing here? No, we will let the router do it so we don't depend on global FastAPI BackgroundTasks here.
+    # 4. Link targeted files if applicable
+    if scope != ReviewScope.project and file_ids:
+        for f_id in file_ids:
+            # Note: We should ideally verify f_id belongs to the project
+            rf = ReviewFile(review_id=review.id, file_id=f_id)
+            db.add(rf)
+        await db.commit()
+
     return review
 
-async def process_review_in_background(review_id: UUID):
+async def process_review_in_background(review_id: UUID, depth: str = "standard"):
     from app.db.session import async_session
     
     async with async_session() as db:
@@ -90,32 +100,56 @@ async def process_review_in_background(review_id: UUID):
         project = await db.get(Project, project_id)
         config = await db.get(AiProviderConfig, project.ai_provider_config_id)
         
-        file_stmt = select(FileModel).where(FileModel.project_id == project_id)
-        files = (await db.execute(file_stmt)).scalars().all()
+        if review.scope == ReviewScope.project:
+            file_stmt = select(FileModel).where(FileModel.project_id == project_id)
+            files = (await db.execute(file_stmt)).scalars().all()
+            all_files = files
+        else:
+            from app.models import ReviewFile
+            file_stmt = (
+                select(FileModel)
+                .join(ReviewFile, ReviewFile.file_id == FileModel.id)
+                .where(ReviewFile.review_id == review_id)
+            )
+            files = (await db.execute(file_stmt)).scalars().all()
+            
+            all_file_stmt = select(FileModel).where(FileModel.project_id == project_id)
+            all_files = (await db.execute(all_file_stmt)).scalars().all()
         
         client = ProviderClient(config)
+        
+        from app.services.ai.context_builder import build_context_for_file
+        project_root_dir = os.path.join(settings.upload_dir, str(project_id))
         
         try:
             for f in files:
                 try:
-                    file_path = os.path.join(settings.upload_dir, str(project_id), f.path)
-                    with open(file_path, "r", encoding="utf-8") as disk_f:
-                        content = disk_f.read()
-                        
-                    if not content.strip():
+                    prompt = build_context_for_file(f, all_files, project_root_dir)
+                    if not prompt:
                         continue
-                        
-                    prompt = f"File: {f.path}\n\n```{f.language}\n{content}\n```"
-                    
-                    result = await client.generate_review(prompt, SECURITY_PROMPT)
+                    from app.services.ai.prompts import get_prompt_for_template
+                    system_prompt = get_prompt_for_template(review.template_type, depth)
+                    result = await client.generate_review(prompt, system_prompt)
                     
                     issues = result.get("issues", [])
+                    
+                    # Delete old issues for this file and category
+                    from sqlalchemy import delete
+                    delete_stmt = delete(Issue).where(
+                        Issue.file_id == f.id,
+                        Issue.category == (review.template_type.value if hasattr(review.template_type, "value") else str(review.template_type))
+                    )
+                    await db.execute(delete_stmt)
+                    
                     for i, issue_data in enumerate(issues):
                         new_issue = Issue(
                             review_id=review.id,
                             file_id=f.id,
                             title=issue_data.get("title", "Unknown Issue"),
                             description=issue_data.get("description", ""),
+                            evidence=issue_data.get("evidence", ""),
+                            category=issue_data.get("category", review.template_type.value if hasattr(review.template_type, "value") else str(review.template_type)),
+                            confidence=issue_data.get("confidence"),
                             severity=issue_data.get("severity", "low"),
                             function_name=issue_data.get("function_name"),
                             line_start=issue_data.get("line_start"),

@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Optional
 from uuid import UUID
+from datetime import datetime
 import httpx
 from pydantic import BaseModel
 
@@ -25,7 +26,13 @@ async def get_configs(
 ):
     stmt = select(AiProviderConfig).where(AiProviderConfig.user_id == user_id)
     result = await db.execute(stmt)
-    return result.scalars().all()
+    configs = result.scalars().all()
+    for c in configs:
+        if c.api_key and len(c.api_key) > 4:
+            c.api_key = f"{c.api_key[:3]}...{c.api_key[-4:]}"
+        elif c.api_key:
+            c.api_key = "***"
+    return configs
 
 @router.post("/ai-provider-configs", response_model=AiProviderConfig)
 async def create_config(
@@ -68,6 +75,8 @@ async def test_provider_connection(
                 timeout=10.0
             )
             res.raise_for_status()
+            config.last_tested_at = datetime.utcnow()
+            await db.commit()
             return {"status": "success", "message": "Connection successful"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Connection failed: {str(e)}")
@@ -95,7 +104,13 @@ async def test_new_provider_connection(
         raise HTTPException(status_code=400, detail=f"Connection failed: {str(e)}")
 
 class ProviderConfigUpdate(BaseModel):
-    model_name: str
+    name: Optional[str] = None
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    model_name: Optional[str] = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    last_tested_at: Optional[datetime] = None
 
 @router.patch("/ai-provider-configs/{config_id}", response_model=AiProviderConfig)
 async def update_config(
@@ -108,7 +123,21 @@ async def update_config(
     if not config or config.user_id != user_id:
         raise HTTPException(status_code=404, detail="Config not found")
     
-    config.model_name = update_data.model_name
+    if update_data.name is not None:
+        config.name = update_data.name
+    if update_data.base_url is not None:
+        config.base_url = update_data.base_url
+    if update_data.api_key is not None and "..." not in update_data.api_key:
+        config.api_key = update_data.api_key
+    if update_data.model_name is not None:
+        config.model_name = update_data.model_name
+    if update_data.temperature is not None:
+        config.temperature = update_data.temperature
+    if update_data.max_tokens is not None:
+        config.max_tokens = update_data.max_tokens
+    if update_data.last_tested_at is not None:
+        config.last_tested_at = update_data.last_tested_at
+    
     await db.commit()
     await db.refresh(config)
     return config
@@ -125,14 +154,33 @@ async def get_provider_models(
         
     try:
         async with httpx.AsyncClient() as client:
+            url = f"{config.base_url.rstrip('/')}/models"
+            print(f"Fetching models from: {url}")
             res = await client.get(
-                f"{config.base_url.rstrip('/')}/models",
+                url,
                 headers={"Authorization": f"Bearer {config.api_key}"},
                 timeout=10.0
             )
+            print(f"Models response status: {res.status_code}")
             res.raise_for_status()
             data = res.json()
-            models = [m["id"] for m in data.get("data", [])]
+            if isinstance(data, dict) and "data" in data:
+                models_list = data["data"]
+            elif isinstance(data, list):
+                models_list = data
+            else:
+                models_list = []
+                
+            models = [m["id"] for m in models_list if "id" in m]
+            # Fallback to 'name' or other field if 'id' is missing
+            if not models:
+                models = [m.get("name") or m.get("model") for m in models_list]
+                models = [m for m in models if m]
+                
             return {"models": models}
+    except httpx.HTTPStatusError as e:
+        print(f"HTTP Error fetching models: {e.response.text}")
+        raise HTTPException(status_code=400, detail=f"Failed to fetch models: {str(e)}")
     except Exception as e:
+        print(f"Error fetching models: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Failed to fetch models: {str(e)}")

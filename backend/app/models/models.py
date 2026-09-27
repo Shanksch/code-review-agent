@@ -56,6 +56,9 @@ class AiProviderConfig(SQLModel, table=True):
     api_key: str = Field(default="")
     model_name: str
     is_default: bool = Field(default=False)
+    temperature: Optional[float] = Field(default=None)
+    max_tokens: Optional[int] = Field(default=None)
+    last_tested_at: Optional[datetime] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -79,9 +82,18 @@ class Project(SQLModel, table=True):
     ai_provider_config: Optional[AiProviderConfig] = Relationship(
         back_populates="projects"
     )
-    files: list["FileModel"] = Relationship(back_populates="project")
-    reviews: list["Review"] = Relationship(back_populates="project")
-    chat_session: Optional["ChatSession"] = Relationship(back_populates="project")
+    files: list["FileModel"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "passive_deletes": True}
+    )
+    reviews: list["Review"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "passive_deletes": True}
+    )
+    chat_session: Optional["ChatSession"] = Relationship(
+        back_populates="project",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "passive_deletes": True}
+    )
 
 # ──────────────────────────── File ────────────────────────────
 
@@ -98,7 +110,10 @@ class FileModel(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     project: Optional[Project] = Relationship(back_populates="files")
-    issues: list["Issue"] = Relationship(back_populates="file")
+    issues: list["Issue"] = Relationship(
+        back_populates="file",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "passive_deletes": True}
+    )
 
 # ──────────────────────────── Review ────────────────────────────
 
@@ -116,7 +131,10 @@ class Review(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     project: Optional[Project] = Relationship(back_populates="reviews")
-    issues: list["Issue"] = Relationship(back_populates="review")
+    issues: list["Issue"] = Relationship(
+        back_populates="review",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "passive_deletes": True}
+    )
 
 # ──────────────────────────── Issue ────────────────────────────
 
@@ -128,6 +146,9 @@ class Issue(SQLModel, table=True):
     file_id: Optional[UUID] = Field(default=None, foreign_key="files.id")
     title: str
     description: str = Field(default="")
+    evidence: str = Field(default="")
+    category: str = Field(default="")
+    confidence: Optional[float] = Field(default=None)
     severity: SeverityLevel = Field(sa_column=Column(String))
     function_name: Optional[str] = Field(default=None)
     line_start: Optional[int] = Field(default=None)
@@ -149,7 +170,10 @@ class ChatSession(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
     project: Optional[Project] = Relationship(back_populates="chat_session")
-    messages: list["ChatMessage"] = Relationship(back_populates="session")
+    messages: list["ChatMessage"] = Relationship(
+        back_populates="session",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan", "passive_deletes": True}
+    )
 
 # ──────────────────────────── Chat Message ────────────────────────────
 

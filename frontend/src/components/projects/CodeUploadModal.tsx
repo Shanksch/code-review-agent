@@ -6,18 +6,21 @@ import { api } from "@/lib/api";
 
 interface CodeUploadModalProps {
   projectId: string;
+  initialMode?: 'zip' | 'github' | 'files';
   onSuccess: () => void;
   onCancel: () => void;
 }
 
-export default function CodeUploadModal({ projectId, onSuccess, onCancel }: CodeUploadModalProps) {
+export default function CodeUploadModal({ projectId, initialMode = 'github', onSuccess, onCancel }: CodeUploadModalProps) {
   const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [githubUrl, setGithubUrl] = useState("");
-  const [mode, setMode] = useState<'zip' | 'github'>('github');
+  const [mode, setMode] = useState<'zip' | 'github' | 'files'>(initialMode);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const multiFileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -32,6 +35,19 @@ export default function CodeUploadModal({ projectId, onSuccess, onCancel }: Code
       }
       setFile(selected);
       setError(null);
+    }
+  };
+
+  const handleMultiFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const selectedFiles = Array.from(e.target.files);
+      const validFiles = selectedFiles.filter(f => f.size <= 50 * 1024 * 1024);
+      if (validFiles.length < selectedFiles.length) {
+        setError("Some files exceed the 50MB limit and were skipped.");
+      } else {
+        setError(null);
+      }
+      setFiles(prev => [...prev, ...validFiles]);
     }
   };
 
@@ -83,6 +99,51 @@ export default function CodeUploadModal({ projectId, onSuccess, onCancel }: Code
     }
   };
 
+  const handleFilesUpload = async () => {
+    if (files.length === 0) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    const formData = new FormData();
+    files.forEach(f => formData.append("files", f));
+
+    try {
+      const { supabase } = await import("@/lib/supabaseClient");
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api";
+      
+      const progressInterval = setInterval(() => {
+        setProgress(p => Math.min(p + 10, 90));
+      }, 200);
+
+      const res = await fetch(`${API_BASE}/projects/${projectId}/upload-files`, {
+        method: "POST",
+        headers: {
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {})
+        },
+        body: formData
+      });
+      
+      clearInterval(progressInterval);
+      setProgress(100);
+      
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      
+      setTimeout(() => {
+        onSuccess();
+      }, 500);
+
+    } catch (err: any) {
+      setError(err.message || "Failed to upload files");
+      setLoading(false);
+      setProgress(0);
+    }
+  };
+
   const handleGithubImport = async () => {
     if (!githubUrl) return;
     setLoading(true);
@@ -120,20 +181,28 @@ export default function CodeUploadModal({ projectId, onSuccess, onCancel }: Code
 
         <div className="flex gap-2 mb-6 p-1 bg-zinc-900/50 rounded-lg border border-white/5">
           <button
-            onClick={() => setMode('github')}
-            className={`flex-1 py-1.5 text-sm font-medium rounded-md flex items-center justify-center gap-2 transition-colors ${
-              mode === 'github' ? 'bg-zinc-800 text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
-            }`}
-          >
-            <Github className="w-4 h-4" /> GitHub
-          </button>
-          <button
             onClick={() => setMode('zip')}
-            className={`flex-1 py-1.5 text-sm font-medium rounded-md flex items-center justify-center gap-2 transition-colors ${
+            className={`flex-1 py-1.5 text-xs font-medium rounded-md flex items-center justify-center gap-1.5 transition-colors ${
               mode === 'zip' ? 'bg-zinc-800 text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
             }`}
           >
-            <FileArchive className="w-4 h-4" /> ZIP File
+            <FileArchive className="w-3.5 h-3.5" /> ZIP File
+          </button>
+          <button
+            onClick={() => setMode('files')}
+            className={`flex-1 py-1.5 text-xs font-medium rounded-md flex items-center justify-center gap-1.5 transition-colors ${
+              mode === 'files' ? 'bg-zinc-800 text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
+            }`}
+          >
+            <UploadCloud className="w-3.5 h-3.5" /> Files
+          </button>
+          <button
+            onClick={() => setMode('github')}
+            className={`flex-1 py-1.5 text-xs font-medium rounded-md flex items-center justify-center gap-1.5 transition-colors ${
+              mode === 'github' ? 'bg-zinc-800 text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
+            }`}
+          >
+            <Github className="w-3.5 h-3.5" /> GitHub
           </button>
         </div>
 
@@ -150,6 +219,49 @@ export default function CodeUploadModal({ projectId, onSuccess, onCancel }: Code
                 disabled={loading}
               />
               <p className="text-xs text-zinc-500">Public repositories only (for now). Uses shallow clone for speed.</p>
+            </div>
+          ) : mode === 'files' ? (
+            <div className="space-y-4">
+              <div 
+                onClick={() => multiFileInputRef.current?.click()}
+                className="border-2 border-dashed border-zinc-700/50 hover:border-sky-500/50 bg-zinc-900/30 rounded-xl p-8 text-center cursor-pointer transition-colors group"
+              >
+                <input 
+                  type="file" 
+                  ref={multiFileInputRef} 
+                  onChange={handleMultiFileChange} 
+                  multiple
+                  className="hidden" 
+                />
+                <UploadCloud className="w-10 h-10 text-zinc-600 group-hover:text-sky-400 mx-auto mb-4 transition-colors" />
+                <h3 className="text-sm font-medium text-zinc-300 mb-1">Click to select files</h3>
+                <p className="text-xs text-zinc-500">You can select multiple files at once.</p>
+              </div>
+              
+              {files.length > 0 && (
+                <div className="bg-zinc-900/50 border border-white/5 rounded-xl p-4 max-h-40 overflow-y-auto space-y-2">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-zinc-300">{files.length} files selected</span>
+                    <button 
+                      onClick={() => setFiles([])} 
+                      className="text-xs text-zinc-500 hover:text-red-400"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+                  {files.map((f, i) => (
+                    <div key={i} className="flex items-center justify-between text-sm py-1 border-t border-white/5 first:border-0">
+                      <span className="text-zinc-400 truncate pr-4">{f.name}</span>
+                      <button 
+                        onClick={() => setFiles(files.filter((_, idx) => idx !== i))}
+                        className="text-zinc-500 hover:text-red-400 p-1"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ) : !file ? (
             <div 
@@ -219,8 +331,8 @@ export default function CodeUploadModal({ projectId, onSuccess, onCancel }: Code
               Cancel
             </button>
             <button
-              onClick={mode === 'github' ? handleGithubImport : handleUpload}
-              disabled={loading || (mode === 'zip' && !file) || (mode === 'github' && !githubUrl)}
+              onClick={mode === 'github' ? handleGithubImport : mode === 'files' ? handleFilesUpload : handleUpload}
+              disabled={loading || (mode === 'zip' && !file) || (mode === 'github' && !githubUrl) || (mode === 'files' && files.length === 0)}
               className="btn-primary flex-1 flex justify-center items-center gap-2"
             >
               {loading ? (
