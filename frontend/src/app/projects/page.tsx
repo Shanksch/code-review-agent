@@ -240,38 +240,7 @@ export default function ProjectsDashboard() {
                   />
                 </div>
 
-                <div>
-                  <label className="label-text mb-2 block">Import Source</label>
-                  <div className="flex gap-2 p-1 bg-zinc-900/50 rounded-lg border border-white/5">
-                    <button
-                      type="button"
-                      onClick={() => setImportSource('zip')}
-                      className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                        importSource === 'zip' ? 'bg-zinc-800 text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
-                      }`}
-                    >
-                      Upload ZIP
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setImportSource('files')}
-                      className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                        importSource === 'files' ? 'bg-zinc-800 text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
-                      }`}
-                    >
-                      Upload Files
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setImportSource('github')}
-                      className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                        importSource === 'github' ? 'bg-zinc-800 text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
-                      }`}
-                    >
-                      GitHub Repo
-                    </button>
-                  </div>
-                </div>
+
 
                 <div>
                   <div className="flex justify-between items-center mb-1.5 mt-2">

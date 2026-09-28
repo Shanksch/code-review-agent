@@ -101,6 +101,14 @@ All design decisions were mine:
 - **Inline code actions** — the floating toolbar that appears when you select code (Explain / Fix / Security) was my design idea to reduce context-switching
 - **Context-aware AI chat** — the radio button context switcher (Issue / File / Project) was designed to give users explicit control over what the AI "sees"
 
+### 7. Post-Launch Optimizations & Bug Fixes
+
+During a follow-up iteration, several minor bugs and optimizations were handled with AI assistance:
+- **Tailwind Linting Fix**: Added a `.vscode/settings.json` to suppress unknown at-rule warnings for `@tailwind` directives.
+- **TypeScript Strictness**: Resolved a nullability type error in `ProviderSettingsModal.tsx` when saving a new AI provider configuration.
+- **Unified Gitignore**: Combined separate frontend and backend `.gitignore` files into a single root-level file for better monorepo management.
+- **Context Optimization for AI Chat (Architectural Decision)**: When the user selected "Entire project" as the chat context, the initial implementation either failed to provide code or attempted to dump the entire codebase into the prompt. I manually instructed the AI to rewrite this logic in `projects.py` to instead query the database for *existing issues* (found during the review phase) and summarize them for the AI chat. This engineering decision drastically reduces token usage, prevents context window overflow, and results in more accurate, targeted AI responses.
+
 ---
 
 ## Sample Prompts Used
@@ -141,13 +149,22 @@ To be explicit about the boundaries:
 
 | Decision | My Reasoning |
 |---|---|
-| Storing file content in PostgreSQL instead of filesystem | Simplifies deployment (no persistent volume needed), enables future full-text search, and Supabase manages backups automatically |
+| Storing file metadata in DB but contents on the filesystem | Prevents database bloat, avoids PostgreSQL row size limits, and allows standard file I/O for text redaction/filtering during upload. |
 | Using Next.js rewrites as an API proxy | Eliminates CORS entirely — the browser only ever talks to one origin, which is cleaner than configuring CORS headers |
 | UUID v4 primary keys everywhere | Prevents enumeration attacks, works naturally with Supabase's `gen_random_uuid()`, and is ready for any future distributed setup |
 | Background tasks over message queues | For a 3-day window, FastAPI's BackgroundTasks provides sufficient concurrency without adding Redis/Celery infrastructure |
 | Severity-based file tree badges | Makes the file explorer immediately actionable — developers can spot the most critical files at a glance without opening each one |
-| Per-file issue cleanup before new reviews | Prevents issue accumulation across re-reviews; the issue count always reflects the current state of the code |
+| Idempotent, per-file issue cleanup | Prevents issue accumulation and duplication. By strictly tying deletion to the specific file ID and the exact review template (ignoring AI category hallucinations), we guarantee the DB reflects the most recent analysis for that file without touching the rest of the project. |
 | Generic AI provider client | One client, one interface, any provider. No if/else chains for different AI services — they all speak the same protocol |
+
+---
+
+### Focus: Hybrid Storage Architecture (Database + Filesystem)
+
+One of the key engineering decisions was implementing a **hybrid storage pattern** for codebases. Rather than dumping raw source code into PostgreSQL or relying entirely on a flat filesystem, the architecture splits the responsibility:
+
+1. **Metadata in PostgreSQL (Supabase):** Every uploaded file gets a `FileModel` record containing its `id` (UUID), `project_id`, `path`, and `size`. This allows the application to map security **Issues** directly to specific files using foreign keys (`file_id`). It also enables the backend to query and construct the hierarchical File Tree for the UI in milliseconds, allowing fast aggregations (like calculating which folders contain "Critical" severity issues) without expensive disk traversal.
+2. **Content on the Filesystem (`uploads/`):** Codebases can be massive. Storing megabytes of text inside database columns would rapidly bloat the database, evict useful indices from RAM, and slow down normal relational queries. By keeping the actual file text on disk, the database stays lightweight and lightning-fast, while leveraging the operating system's heavily optimized file I/O for text extraction and redaction.
 
 ---
 

@@ -227,7 +227,7 @@ auth.users (Supabase-managed)
 - **UUIDs everywhere** — All primary keys are UUID v4 for security (no enumerable IDs) and distributed-system readiness
 - **Cascading deletes** — Deleting a project cascades to files, reviews, issues, and chat sessions
 - **Soft references** — `ai_provider_config_id` uses `ON DELETE SET NULL` so deleting a provider doesn't break projects
-- **Content in DB** — File contents are stored directly in the `files` table rather than on disk, simplifying deployment and enabling full-text search capabilities
+- **Hybrid File Storage** — File metadata (path, size, project relation) is stored in the database to allow rapid relational queries (e.g., mapping issues to files via foreign keys and quickly rendering the file tree). However, the actual file content is stored on the filesystem (`uploads/`) to prevent database bloat, avoid row size limits on large files, and enable fast I/O for text processing.
 
 ---
 
@@ -270,7 +270,8 @@ auth.users (Supabase-managed)
               │     with severity/lines      │
               │                              │
               │  6. Delete stale issues      │
-              │     for same file+category   │
+              │     (Strictly by file ID &   │
+              │      Review Template)        │
               │                              │
               │  7. Save new issues to DB    │
               └──────────────┬──────────────┘
@@ -309,7 +310,7 @@ Each review template uses a carefully crafted system prompt that:
 | **SQLModel over raw SQLAlchemy** | Combines Pydantic validation with SQLAlchemy ORM — single model definition for both API schemas and DB models |
 | **Next.js API proxy** | Eliminates CORS issues entirely; the browser only talks to one origin |
 | **Background tasks over queues** | For a 3-day assessment, FastAPI's `BackgroundTasks` provides sufficient async processing without the operational overhead of Redis/Celery |
-| **File content in DB** | Simplifies the architecture (no file system management), enables future full-text search, and works naturally with Supabase's managed Postgres |
+| **Hybrid Storage (DB + Disk)** | File metadata is kept in the database to enable rapid UI rendering (e.g., file tree) and relational mapping of issues. Actual file text is kept on the filesystem to avoid bloating the database and dragging down query performance. |
 | **No external state management** | React's built-in `useState` + `useContext` handles all state needs without adding Redux/Zustand complexity |
 | **Generic AI client** | A single `provider_client.py` works with any OpenAI-compatible endpoint — no provider-specific code paths |
 

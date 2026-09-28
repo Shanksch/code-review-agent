@@ -411,13 +411,33 @@ async def chat_with_assistant(
     system_prompt = "You are an elite AI code review assistant. Be extremely concise. Go straight to the answer without fluff. Do not offer pleasantries like 'Happy to help'."
     
     context_str = ""
-    if request.context.get("issue"):
+    active_mode = request.context.get("activeMode")
+    
+    if request.context.get("issue") and active_mode in ("issue", None):
         issue = request.context["issue"]
         context_str += f"Selected Issue:\nTitle: {issue.get('title')}\nDescription: {issue.get('description')}\nRecommendation: {issue.get('recommendation')}\nEvidence: {issue.get('evidence')}\n\n"
         
     files_used = []
     
-    if request.context.get("fileId"):
+    if active_mode == "project":
+        from app.models import Issue, Review
+        stmt = (
+            select(Issue, FileModel)
+            .join(Review, Review.id == Issue.review_id)
+            .join(FileModel, FileModel.id == Issue.file_id)
+            .where(Review.project_id == project_id)
+            .order_by(Issue.severity.desc()) # Put higher severity first
+        )
+        results = (await db.execute(stmt)).all()
+        if results:
+            context_str += "Known Project Issues:\n"
+            for issue, file_model in results:
+                context_str += f"- [{issue.severity.upper()}] {issue.title} in {file_model.path}:\n  Description: {issue.description}\n  Recommendation: {issue.recommendation}\n\n"
+                if file_model.path not in files_used:
+                    files_used.append(file_model.path)
+        else:
+            context_str += "No known issues found in this project.\n"
+    elif request.context.get("fileId"):
         stmt = select(FileModel).where(FileModel.id == request.context["fileId"], FileModel.project_id == project_id)
         file_model = (await db.execute(stmt)).scalar_one_or_none()
         if file_model:

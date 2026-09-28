@@ -117,7 +117,7 @@ export default function ProviderSettingsModal({ projectId, currentConfigId, conf
           temperature, max_tokens: maxTokens
         });
         await api.patch(`/projects/${projectId}`, { ai_provider_config_id: configId });
-        onSave(configId, { ...res, temperature, max_tokens: maxTokens });
+        onSave(configId as string, { ...res, temperature, max_tokens: maxTokens });
       }
       onClose();
     } catch (err: any) {

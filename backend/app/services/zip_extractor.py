@@ -22,6 +22,10 @@ IGNORED_DIRS = {
     ".git",
     # Build
     "dist", "build", "out", ".next", ".nuxt", "target", "coverage", ".cache",
+    # Frameworks & Infrastructure
+    ".svelte-kit", ".output", ".serverless", ".expo", "cdk.out", ".tox", ".nox",
+    # Caches
+    ".turbo", ".nx", ".nyc_output", "htmlcov",
     # IDE
     ".vscode", ".idea",
     # Python
@@ -33,14 +37,42 @@ IGNORED_EXTS = {
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".mp3", ".wav", 
     ".mp4", ".mov", ".avi", ".zip", ".tar", ".gz", ".7z", ".rar", 
     ".exe", ".dll", ".so", ".dylib", ".pyc", ".woff", ".woff2", ".ttf", ".eot", ".svg",
+    # Compiled Code
+    ".class", ".o", ".obj", ".pdb", ".apk", ".aab", ".ipa",
     # Generated
-    ".min.js", ".min.css", ".map",
-    # Data
-    ".csv", ".tsv", ".parquet", ".sqlite", ".sqlite3",
+    ".min.js", ".min.css", ".map", ".js.map", ".css.map",
+    # Reports
+    ".lcov", ".prof",
+    # Data & Databases
+    ".csv", ".tsv", ".parquet", ".sqlite", ".sqlite3", ".db", ".rdb", ".bson", ".sql.gz",
     # Logs
     ".log",
+    # Design & Docs
+    ".pdf", ".docx", ".pptx", ".psd", ".ai", ".sketch", ".fig",
     # OS
     ".ds_store"
+}
+
+IGNORED_FILES = {
+    "package-lock.json", 
+    "yarn.lock", 
+    "pnpm-lock.yaml", 
+    "bun.lockb", 
+    "uv.lock", 
+    "poetry.lock", 
+    "gemfile.lock", 
+    "composer.lock", 
+    "cargo.lock",
+    "mix.lock",
+    "flake.lock",
+    "go.sum",
+    ".eslintcache",
+    ".stylelintcache",
+    ".prettiercache",
+    "lcov.info",
+    "coverage.xml",
+    "test-results.xml",
+    "thumbs.db"
 }
 
 SECRET_EXTS = {".pem", ".key", ".p12", ".pfx"}
@@ -132,7 +164,8 @@ async def extract_and_store_zip(
                 if target_path.suffix.lower() in IGNORED_EXTS:
                     continue
                 
-                if target_path.name.lower() == "thumbs.db" or target_path.name.endswith(".min.js") or target_path.name.endswith(".min.css"):
+                # 4. Filter ignored exact file names
+                if target_path.name.lower() in IGNORED_FILES or target_path.name.endswith(".min.js") or target_path.name.endswith(".min.css"):
                     continue
                     
                 # 4. Size cap (skip files > 1MB)
@@ -228,7 +261,8 @@ async def extract_and_store_files(
         if target_path.suffix.lower() in IGNORED_EXTS:
             continue
             
-        if target_path.name.lower() == "thumbs.db" or target_path.name.endswith(".min.js") or target_path.name.endswith(".min.css"):
+        # File exact name filtering
+        if target_path.name.lower() in IGNORED_FILES or target_path.name.endswith(".min.js") or target_path.name.endswith(".min.css"):
             continue
 
         target_path.parent.mkdir(parents=True, exist_ok=True)

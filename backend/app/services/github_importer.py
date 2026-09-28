@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models import FileModel
-from app.services.zip_extractor import IGNORED_DIRS, IGNORED_EXTS
+from app.services.zip_extractor import IGNORED_DIRS, IGNORED_EXTS, IGNORED_FILES
 
 settings = get_settings()
 
@@ -69,6 +69,10 @@ async def clone_and_store_github(
                 
                 # Filter ignored file extensions
                 if target_path.suffix.lower() in IGNORED_EXTS:
+                    continue
+                    
+                # Filter ignored files
+                if target_path.name.lower() in IGNORED_FILES or target_path.name.endswith(".min.js") or target_path.name.endswith(".min.css"):
                     continue
                     
                 # Size cap (skip files > 1MB)

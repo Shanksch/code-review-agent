@@ -5,9 +5,10 @@ interface OverviewTabProps {
   stats: any;
   reviews: any[];
   onRunReview?: () => void;
+  onReviewClick?: (reviewId: string) => void;
 }
 
-export default function OverviewTab({ stats, reviews, onRunReview }: OverviewTabProps) {
+export default function OverviewTab({ stats, reviews, onRunReview, onReviewClick }: OverviewTabProps) {
   const [reviewSearch, setReviewSearch] = useState("");
   const [reviewFilter, setReviewFilter] = useState("All");
 
@@ -208,7 +209,11 @@ export default function OverviewTab({ stats, reviews, onRunReview }: OverviewTab
               </thead>
               <tbody className="text-sm">
                 {filteredReviews.map((review: any) => (
-                  <tr key={review.id} className="border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors group">
+                  <tr 
+                    key={review.id} 
+                    className="border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors group cursor-pointer"
+                    onClick={() => onReviewClick && onReviewClick(review.id)}
+                  >
                     <td className="p-4">
                       <div className="text-zinc-200 font-medium capitalize mb-1">{review.scope.replace("_", " ")}</div>
                       <div className="text-xs text-zinc-500 capitalize">{review.template_type.replace("_", " ")}</div>

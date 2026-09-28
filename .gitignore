@@ -1,0 +1,21 @@
+# Environments
+.env
+.env.local
+
+# IDE
+.vscode/
+
+# Node / Frontend
+node_modules/
+.next/
+out/
+
+# Python / Backend
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+uploads/
