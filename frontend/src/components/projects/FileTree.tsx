@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { ChevronRight, ChevronDown, Folder, FileCode2, FileText, File, AlertCircle } from "lucide-react";
 
 export interface TreeNode {
@@ -45,7 +45,7 @@ const getSeverityColor = (severity?: string | null) => {
   }
 };
 
-const TreeNodeItem = ({ 
+const TreeNodeItem = React.memo(function TreeNodeItem({ 
   node, 
   level, 
   onFileSelect, 
@@ -61,7 +61,7 @@ const TreeNodeItem = ({
   selectable?: boolean;
   selectedIds?: string[];
   onSelectChange?: (id: string, selected: boolean) => void;
-}) => {
+}) {
   const [isOpen, setIsOpen] = useState(false);
 
   useEffect(() => {
@@ -163,9 +163,9 @@ const TreeNodeItem = ({
       )}
     </div>
   );
-};
+});
 
-export default function FileTree({ data, onFileSelect, selectedFileId, selectable, selectedIds, onSelectChange }: FileTreeProps) {
+const FileTree = React.memo(function FileTree({ data, onFileSelect, selectedFileId, selectable, selectedIds, onSelectChange }: FileTreeProps) {
   if (!data || data.length === 0) {
     return (
       <div className="p-4 text-center text-sm text-zinc-500">
@@ -190,4 +190,6 @@ export default function FileTree({ data, onFileSelect, selectedFileId, selectabl
       ))}
     </div>
   );
-}
+});
+
+export default FileTree;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { Bot, ShieldAlert, Wrench, Info } from "lucide-react";
@@ -14,7 +14,7 @@ interface CodeViewerProps {
   onAskAI?: (prompt: string, selectedCode: string) => void;
 }
 
-export default function CodeViewer({ content, language, highlightLines = [], severity = "low", activeIssueId, onAskAI }: CodeViewerProps) {
+const CodeViewer = React.memo(function CodeViewer({ content, language, highlightLines = [], severity = "low", activeIssueId, onAskAI }: CodeViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectionRect, setSelectionRect] = useState<{ top: number; left: number } | null>(null);
   const [selectedText, setSelectedText] = useState("");
@@ -157,4 +157,6 @@ export default function CodeViewer({ content, language, highlightLines = [], sev
       )}
     </div>
   );
-}
+});
+
+export default CodeViewer;

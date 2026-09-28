@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { FolderTree, Activity, CheckCircle, Clock, ChevronRight, Search, Zap, Check, AlertCircle, ShieldAlert, CheckCircle2, Eye } from "lucide-react";
+import React, { useState } from "react";
+import { FolderTree, Activity, CheckCircle, Clock, ChevronRight, Search, Zap, Check, AlertCircle, ShieldAlert, CheckCircle2, Eye, Loader2 } from "lucide-react";
 import ReviewDetailsModal from "./ReviewDetailsModal";
 
 interface OverviewTabProps {
@@ -10,7 +10,7 @@ interface OverviewTabProps {
   onReviewClick?: (reviewId: string) => void;
 }
 
-export default function OverviewTab({ projectId, stats, reviews, onRunReview, onReviewClick }: OverviewTabProps) {
+const OverviewTab = React.memo(function OverviewTab({ projectId, stats, reviews, onRunReview, onReviewClick }: OverviewTabProps) {
   const [reviewSearch, setReviewSearch] = useState("");
   const [reviewFilter, setReviewFilter] = useState("All");
   const [detailsReviewId, setDetailsReviewId] = useState<string | null>(null);
@@ -36,6 +36,7 @@ export default function OverviewTab({ projectId, stats, reviews, onRunReview, on
   const coverageMap = new Set(stats?.coverage || []);
 
   const latestReview = stats?.latest_review;
+  const runningReview = reviews?.find(r => r.status === "running");
 
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-8 pb-20">
@@ -121,12 +122,38 @@ export default function OverviewTab({ projectId, stats, reviews, onRunReview, on
           <h3 className="text-sm font-medium text-zinc-300 mb-4 flex items-center gap-2">
             <Clock className="w-4 h-4 text-zinc-500" /> Latest Review
           </h3>
-          {latestReview ? (
+          {runningReview ? (
             <div className="space-y-4">
               <div className="flex items-end justify-between">
                 <div>
-                  <div className="text-2xl font-semibold text-zinc-100">{latestReview.issues_count}</div>
-                  <div className="text-sm text-zinc-500">issues detected</div>
+                  <div className="text-sm text-sky-400 font-medium flex items-center gap-2 mb-1">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> RUNNING
+                  </div>
+                  <div className="text-xs text-zinc-500">Analysis in progress...</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm text-zinc-300 capitalize">{runningReview.template_type?.replace("_", " ")}</div>
+                  <div className="text-xs text-zinc-500">Started recently</div>
+                </div>
+              </div>
+            </div>
+          ) : latestReview ? (
+            <div className="space-y-4">
+              <div className="flex items-end justify-between">
+                <div>
+                  {latestReview.status === 'failed' ? (
+                    <>
+                      <div className="text-sm text-rose-400 font-medium flex items-center gap-2 mb-1">
+                        <AlertCircle className="w-3.5 h-3.5" /> FAILED
+                      </div>
+                      <div className="text-xs text-zinc-500">Review did not complete</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-2xl font-semibold text-zinc-100">{latestReview.issues_count}</div>
+                      <div className="text-sm text-zinc-500">issues detected</div>
+                    </>
+                  )}
                 </div>
                 <div className="text-right">
                   <div className="text-sm text-zinc-300 capitalize">{latestReview.template.replace("_", " ")}</div>
@@ -143,19 +170,33 @@ export default function OverviewTab({ projectId, stats, reviews, onRunReview, on
         <div className="bg-zinc-900/30 border border-white/5 rounded-xl p-6 relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none" />
           <h3 className="text-sm font-medium text-zinc-300 mb-4 flex items-center gap-2">
-            <Zap className="w-4 h-4 text-zinc-500" /> AI Usage Activity
+            <Zap className="w-4 h-4 text-zinc-500" /> {runningReview ? "AI Review" : "AI Usage Activity"}
           </h3>
           <div className="space-y-4">
             <div className="flex justify-between items-center border-b border-white/5 pb-3">
-              <span className="text-sm text-zinc-400">Current Model</span>
+              <span className="text-sm text-zinc-400">Model</span>
               <span className="text-sm font-medium text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
                 {stats?.ai_model || "Not Configured"}
               </span>
             </div>
             <div className="flex justify-between items-center border-b border-white/5 pb-3">
-              <span className="text-sm text-zinc-400">Files Analyzed</span>
+              <span className="text-sm text-zinc-400">Files {runningReview ? "" : "Analyzed"}</span>
               <span className="text-sm text-zinc-200">{stats?.total_files || 0}</span>
             </div>
+            {runningReview && (
+              <div className="flex justify-between items-center border-b border-white/5 pb-3">
+                <span className="text-sm text-zinc-400">Scope</span>
+                <span className="text-sm text-zinc-200 capitalize">{runningReview.scope?.replace("_", " ")}</span>
+              </div>
+            )}
+            {runningReview && (
+              <div className="flex justify-between items-center pb-1">
+                <span className="text-sm text-zinc-400">Status</span>
+                <span className="text-sm text-sky-400 flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Analyzing
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -246,13 +287,22 @@ export default function OverviewTab({ projectId, stats, reviews, onRunReview, on
                       </div>
                     </td>
                     <td className="p-4">
-                      <span className={`px-2 py-1 rounded text-[10px] uppercase tracking-wider font-semibold ${
-                        review.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                        review.status === 'running' ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20' :
-                        'bg-red-500/10 text-red-400 border border-red-500/20'
-                      }`}>
-                        {review.status}
-                      </span>
+                      {review.status === 'running' ? (
+                        <div className="flex items-center gap-2">
+                           <Loader2 className="w-3 h-3 text-sky-500 animate-spin" />
+                           <div className="w-24 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                             <div className="h-full bg-sky-500 animate-pulse" style={{ width: '60%' }}></div>
+                           </div>
+                        </div>
+                      ) : (
+                        <span className={`px-2 py-1 rounded text-[10px] uppercase tracking-wider font-semibold ${
+                          review.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                          review.status === 'canceled' ? 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20' :
+                          'bg-red-500/10 text-red-400 border border-red-500/20'
+                        }`}>
+                          {review.status}
+                        </span>
+                      )}
                     </td>
                     <td className="p-4 text-zinc-500 text-right">
                       {new Date(review.created_at).toLocaleString()}
@@ -279,4 +329,6 @@ export default function OverviewTab({ projectId, stats, reviews, onRunReview, on
       )}
     </div>
   );
-}
+});
+
+export default OverviewTab;

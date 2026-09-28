@@ -26,6 +26,8 @@ interface IssueSidebarProps {
   selectedIssue: Issue | null;
   selectedReviewId: string | null;
   contentLoading: boolean;
+  hasRunningReview?: boolean;
+  runningReviews?: any[];
   rightTab: "issues" | "chat";
   fixes: Record<string, { loading: boolean, diff?: string }>;
   onTabChange: (tab: "issues" | "chat") => void;
@@ -36,13 +38,15 @@ interface IssueSidebarProps {
   getHighlightLines: () => number[];
 }
 
-export default function IssueSidebar({
+const IssueSidebar = React.memo(function IssueSidebar({
   projectId,
   fileIssues,
   selectedFile,
   selectedIssue,
   selectedReviewId,
   contentLoading,
+  hasRunningReview,
+  runningReviews,
   rightTab,
   fixes,
   onTabChange,
@@ -54,6 +58,26 @@ export default function IssueSidebar({
 }: IssueSidebarProps) {
   const [issueSearch, setIssueSearch] = useState("");
   const [issueSeverityFilter, setIssueSeverityFilter] = useState("all");
+  const [fakeProgress, setFakeProgress] = useState<Record<string, number>>({});
+
+  React.useEffect(() => {
+    if (!hasRunningReview || !runningReviews?.length) return;
+
+    const interval = setInterval(() => {
+      setFakeProgress(prev => {
+        const next = { ...prev };
+        runningReviews.forEach(r => {
+          const current = next[r.id] || 0;
+          if (current < 90) {
+            next[r.id] = Math.min(90, current + Math.random() * 5 + 2);
+          }
+        });
+        return next;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [hasRunningReview, runningReviews]);
 
   return (
     <aside className="w-96 border-l border-white/5 bg-zinc-900/20 flex flex-col shrink-0 relative">
@@ -77,6 +101,7 @@ export default function IssueSidebar({
           <div className="absolute inset-0">
             <AIChat
               projectId={projectId}
+              hasRunningReview={hasRunningReview}
               context={{
                 fileId: selectedFile?.id,
                 fileName: selectedFile?.name,
@@ -122,10 +147,34 @@ export default function IssueSidebar({
               {contentLoading ? (
                 <div className="flex justify-center p-4"><Loader2 className="w-4 h-4 animate-spin text-zinc-500" /></div>
               ) : fileIssues.length === 0 ? (
-                <div className="text-sm text-zinc-500 text-center flex flex-col h-full items-center justify-center">
-                  <CheckCircle2 className="w-8 h-8 text-emerald-500/40 mb-3" />
-                  No issues detected. Your code looks clean! 🎉
-                </div>
+                hasRunningReview ? (
+                  <div className="flex flex-col h-full items-center justify-center text-center p-6">
+                     <div className="w-12 h-12 rounded-full border border-sky-500/20 bg-sky-500/5 flex items-center justify-center mb-4">
+                       <Loader2 className="w-6 h-6 text-sky-400 animate-spin" />
+                     </div>
+                     <h3 className="text-zinc-200 font-medium mb-1 uppercase tracking-wider text-xs">AI Analysis</h3>
+                     <p className="text-xs text-zinc-500 max-w-[200px]">Scanning project and generating review findings...</p>
+                     
+                     <div className="mt-8 w-full max-w-[200px] space-y-3">
+                       {runningReviews?.map((r, i) => (
+                         <div key={r.id || i} className="flex flex-col gap-1.5 text-[10px] text-zinc-500">
+                           <div className="flex justify-between items-center">
+                             <span className="capitalize text-zinc-400 font-medium">{r.template_type?.replace("_", " ")}</span>
+                             <span>{Math.floor(fakeProgress[r.id] || 0)}%</span>
+                           </div>
+                           <div className="w-full h-1 bg-zinc-800 rounded overflow-hidden">
+                             <div className="h-full bg-sky-500 transition-all duration-1000 ease-out" style={{ width: `${fakeProgress[r.id] || 0}%` }}></div>
+                           </div>
+                         </div>
+                       ))}
+                     </div>
+                  </div>
+                ) : (
+                  <div className="text-sm text-zinc-500 text-center flex flex-col h-full items-center justify-center">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-500/40 mb-3" />
+                    No issues detected. Your code looks clean! 🎉
+                  </div>
+                )
               ) : (
                 <div className="space-y-3">
                   {fileIssues
@@ -242,4 +291,6 @@ export default function IssueSidebar({
       </div>
     </aside>
   );
-}
+});
+
+export default IssueSidebar;

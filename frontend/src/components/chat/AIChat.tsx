@@ -16,9 +16,10 @@ interface AIChatProps {
     issue?: any;
     lines?: number[];
   };
+  hasRunningReview?: boolean;
 }
 
-export default function AIChat({ projectId, context }: AIChatProps) {
+export default function AIChat({ projectId, context, hasRunningReview }: AIChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -180,26 +181,28 @@ export default function AIChat({ projectId, context }: AIChatProps) {
             <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-sky-500/20 to-emerald-500/20 border border-white/10 flex items-center justify-center mb-4">
               <Bot className="w-6 h-6 text-sky-400" />
             </div>
-            <h3 className="text-zinc-100 font-medium mb-2">How can I help?</h3>
+            <h3 className="text-zinc-100 font-medium mb-2">{hasRunningReview ? "Review in progress." : "How can I help?"}</h3>
             <p className="text-zinc-500 text-sm max-w-[200px] mb-6">
-              Ask questions about the {context.issue ? 'selected issue' : context.fileName ? 'current file' : 'entire codebase'}.
+              {hasRunningReview 
+                ? "You can ask questions about the code while the review runs."
+                : `Ask questions about the ${context.issue ? 'selected issue' : context.fileName ? 'current file' : 'entire codebase'}.`}
             </p>
             <div className="flex flex-col gap-2 w-full max-w-[240px]">
               <button 
                 onClick={() => {
-                  setInput(context.issue ? "Explain this issue in simpler terms" : "What does this code do?");
+                  setInput(hasRunningReview ? "What is this project architecture?" : context.issue ? "Explain this issue in simpler terms" : "What does this code do?");
                 }}
                 className="text-xs text-left px-3 py-2 rounded-lg bg-zinc-900/50 border border-white/5 hover:bg-zinc-800 transition-colors text-zinc-300"
               >
-                {context.issue ? "Explain this issue in simpler terms" : "What does this code do?"}
+                {hasRunningReview ? "What is this project architecture?" : context.issue ? "Explain this issue in simpler terms" : "What does this code do?"}
               </button>
               <button 
                 onClick={() => {
-                  setInput(context.issue ? "How do I fix this issue?" : "Are there any security vulnerabilities here?");
+                  setInput(hasRunningReview ? "Identify security risks" : context.issue ? "How do I fix this issue?" : "Are there any security vulnerabilities here?");
                 }}
                 className="text-xs text-left px-3 py-2 rounded-lg bg-zinc-900/50 border border-white/5 hover:bg-zinc-800 transition-colors text-zinc-300"
               >
-                {context.issue ? "How do I fix this issue?" : "Are there any security vulnerabilities here?"}
+                {hasRunningReview ? "Identify security risks" : context.issue ? "How do I fix this issue?" : "Are there any security vulnerabilities here?"}
               </button>
             </div>
           </div>

@@ -11,6 +11,7 @@ interface WorkspaceToolbarProps {
   onProjectNameUpdate: (newName: string) => void;
   onOpenSettings: () => void;
   onRunReview: () => void;
+  onCancelReview?: () => void;
 }
 
 export default function WorkspaceToolbar({
@@ -21,7 +22,8 @@ export default function WorkspaceToolbar({
   treeDataLength,
   onProjectNameUpdate,
   onOpenSettings,
-  onRunReview
+  onRunReview,
+  onCancelReview
 }: WorkspaceToolbarProps) {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState("");
@@ -80,23 +82,32 @@ export default function WorkspaceToolbar({
           <Settings className="w-4 h-4" />
           Settings
         </button>
-        {hasRunningReview && (
-          <div className="flex items-center gap-2 px-3 py-1.5 mr-2 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 text-sm font-medium">
-            <Loader2 className="w-4 h-4 animate-spin" />
-            <span>Reviewing...</span>
-          </div>
+        {hasRunningReview ? (
+          <>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 text-sm font-medium">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Reviewing...</span>
+            </div>
+            <button
+              onClick={onCancelReview}
+              className="btn-secondary py-1.5 text-sm flex items-center gap-2 border-rose-500/20 text-rose-400 hover:bg-rose-500/10"
+            >
+              Cancel
+            </button>
+          </>
+        ) : (
+          <button
+            onClick={onRunReview}
+            disabled={reviewLoading || treeDataLength === 0}
+            className="btn-primary py-1.5 text-sm flex items-center gap-2"
+          >
+            {reviewLoading ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Starting...</>
+            ) : (
+              "Run Review"
+            )}
+          </button>
         )}
-        <button
-          onClick={onRunReview}
-          disabled={reviewLoading || treeDataLength === 0}
-          className="btn-primary py-1.5 text-sm flex items-center gap-2"
-        >
-          {reviewLoading ? (
-            <><Loader2 className="w-4 h-4 animate-spin" /> Starting...</>
-          ) : (
-            "Run Review"
-          )}
-        </button>
       </div>
     </div>
   );

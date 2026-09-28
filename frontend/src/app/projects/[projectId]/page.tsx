@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useState, useEffect } from "react";
+import { use, useState, useEffect, useMemo, useCallback } from "react";
 import { api } from "@/lib/api";
 import Navbar from "@/components/Navbar";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -205,6 +205,15 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ project
       });
       setShowReviewModal(false);
       setHasRunningReview(true);
+      
+      // Immediately fetch reviews to populate the running status in the sidebar
+      try {
+        const reviewsData = await api.get(`/projects/${projectId}/reviews?limit=20`);
+        setReviews(reviewsData.reviews || []);
+      } catch (err) {
+        console.error("Failed to fetch recent reviews:", err);
+      }
+      
       // Wait a moment for background task to initialize
       setTimeout(() => fetchTree(), 1000);
     } catch (err) {
@@ -213,6 +222,19 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ project
     } finally {
       setReviewLoading(false);
     }
+  };
+
+  const cancelReview = async () => {
+    const runningReviews = reviews.filter((r: any) => r.status === "running");
+    for (const r of runningReviews) {
+      try {
+        await api.post(`/projects/${projectId}/reviews/${r.id}/cancel`, {});
+      } catch (err) {
+        console.error("Failed to cancel review", err);
+      }
+    }
+    setHasRunningReview(false);
+    setReviews(reviews.map((r: any) => r.status === "running" ? { ...r, status: "canceled" } : r));
   };
 
   const handleIssueClick = (issue: any) => {
@@ -260,14 +282,41 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ project
     }
   };
 
-  const getHighlightLines = () => {
+  const highlightLines = useMemo(() => {
     if (!selectedIssue || !selectedIssue.line_start) return [];
     const lines = [];
     const start = selectedIssue.line_start;
     const end = selectedIssue.line_end || selectedIssue.line_start;
     for (let i = start; i <= end; i++) lines.push(i);
     return lines;
-  };
+  }, [selectedIssue]);
+
+  const handleCodeViewerAskAI = useCallback((prompt: string, code: string) => {
+    setRightTab("chat");
+    window.dispatchEvent(new CustomEvent('ai-chat-prompt', { detail: { prompt, code } }));
+  }, []);
+
+  const filteredTreeData = useMemo(() => {
+    const getFilteredTree = (nodes: TreeNode[], term: string): TreeNode[] => {
+      if (!term) return nodes;
+      const lowerTerm = term.toLowerCase();
+
+      return nodes.map(node => {
+        if (node.type === "directory") {
+          const filteredChildren = getFilteredTree(node.children || [], term);
+          if (node.name.toLowerCase().includes(lowerTerm) || filteredChildren.length > 0) {
+            return { ...node, children: filteredChildren };
+          }
+          return null;
+        }
+        if (node.name.toLowerCase().includes(lowerTerm)) {
+          return node;
+        }
+        return null;
+      }).filter(Boolean) as TreeNode[];
+    };
+    return getFilteredTree(treeData, fileSearch);
+  }, [treeData, fileSearch]);
 
   if (loading) {
     return (
@@ -292,9 +341,10 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ project
           hasRunningReview={hasRunningReview}
           reviewLoading={reviewLoading}
           treeDataLength={treeData.length}
-          onProjectNameUpdate={(newName) => setProject({ ...project, name: newName })}
+          onProjectNameUpdate={(newName) => setProject(prev => prev ? { ...prev, name: newName } : null)}
           onOpenSettings={() => setShowSettingsModal(true)}
           onRunReview={() => setShowReviewModal(true)}
+          onCancelReview={cancelReview}
         />
 
         {/* 3-Pane Layout */}
@@ -329,29 +379,7 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ project
                 </div>
               ) : treeData.length > 0 ? (
                 <FileTree
-                  data={
-                    (() => {
-                      const getFilteredTree = (nodes: TreeNode[], term: string): TreeNode[] => {
-                        if (!term) return nodes;
-                        const lowerTerm = term.toLowerCase();
-
-                        return nodes.map(node => {
-                          if (node.type === "directory") {
-                            const filteredChildren = getFilteredTree(node.children || [], term);
-                            if (node.name.toLowerCase().includes(lowerTerm) || filteredChildren.length > 0) {
-                              return { ...node, children: filteredChildren };
-                            }
-                            return null;
-                          }
-                          if (node.name.toLowerCase().includes(lowerTerm)) {
-                            return node;
-                          }
-                          return null;
-                        }).filter(Boolean) as TreeNode[];
-                      };
-                      return getFilteredTree(treeData, fileSearch);
-                    })()
-                  }
+                  data={filteredTreeData}
                   onFileSelect={handleFileSelect}
                   selectedFileId={selectedFile?.id}
                 />
@@ -447,13 +475,10 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ project
                 <CodeViewer
                   content={fileContent || ""}
                   language={selectedFile?.name?.split('.').pop() || "typescript"}
-                  highlightLines={getHighlightLines()}
+                  highlightLines={highlightLines}
                   severity={selectedIssue?.severity || "low"}
                   activeIssueId={selectedIssue?.id}
-                  onAskAI={(prompt, code) => {
-                    setRightTab("chat");
-                    window.dispatchEvent(new CustomEvent('ai-chat-prompt', { detail: { prompt, code } }));
-                  }}
+                  onAskAI={handleCodeViewerAskAI}
                 />
               )}
             </div>
@@ -467,6 +492,8 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ project
             selectedIssue={selectedIssue}
             selectedReviewId={selectedReviewId}
             contentLoading={contentLoading}
+            hasRunningReview={hasRunningReview}
+            runningReviews={reviews.filter((r: any) => r.status === "running")}
             rightTab={rightTab}
             fixes={fixes}
             onTabChange={setRightTab}
@@ -474,7 +501,7 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ project
             onIssueClick={handleIssueClick}
             onSuggestFix={handleSuggestFix}
             onAskAI={handleAskAI}
-            getHighlightLines={getHighlightLines}
+            getHighlightLines={() => highlightLines}
           />
 
         </div>

@@ -337,6 +337,28 @@ async def get_project_review_details(
         "issues": issues_list
     }
 
+@router.post("/projects/{project_id}/reviews/{review_id}/cancel")
+async def cancel_project_review(
+    project_id: UUID,
+    review_id: UUID,
+    user_id: UUID = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    from app.models import Review
+    stmt = (
+        select(Review)
+        .where(Review.id == review_id, Review.project_id == project_id, Review.user_id == user_id)
+    )
+    review = (await db.execute(stmt)).scalars().first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+        
+    if review.status == "running":
+        review.status = "canceled"
+        await db.commit()
+        
+    return {"message": "Review canceled"}
+
 @router.get("/projects/{project_id}/stats")
 async def get_project_stats(
     project_id: UUID,

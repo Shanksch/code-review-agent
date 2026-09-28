@@ -92,60 +92,92 @@ The frontend proxies all `/api/*` requests to the backend via Next.js rewrites, 
 ### Prerequisites
 - **Node.js** 18+ and npm
 - **Python** 3.11+
-- **PostgreSQL** database (Supabase recommended)
+- A **Supabase** account (Free tier is perfectly fine!)
 - An **AI provider** (OpenAI API key, or a local LM Studio / Ollama instance)
 
-### 1. Clone the Repository
-```bash
-git clone https://github.com/your-username/code-review-agent.git
-cd code-review-agent
-```
+### 1. Supabase Database Setup (DO THIS FIRST)
+We use Supabase for authentication and database storage. 
 
-### 2. Backend Setup
+1. Create a new project at [database.new](https://database.new) (Supabase).
+2. Go to the **SQL Editor** in your Supabase dashboard.
+3. Open the `backend/schema.sql` file from this repository.
+4. Copy all the text from that file, paste it into the Supabase SQL Editor, and click **Run**.
+*(This creates all the necessary tables for the app).*
+
+### 2. Configure Environment Variables
+We need to connect both the frontend and backend to your new Supabase project.
+
+#### Backend Configuration
+1. Navigate to the backend folder: `cd backend`
+2. Duplicate the example environment file: `cp .env.example .env`
+3. Open `.env` and fill in the 3 Supabase variables:
+   - **`SUPABASE_URL`**: Found in Supabase Settings -> API -> Project URL
+   - **`SUPABASE_JWT_SECRET`**: Found in Supabase Settings -> API -> JWT Settings (You have to click 'Generate' or 'Reveal' to see it)
+   - **`DATABASE_URL`**: Found in Supabase Settings -> Database -> Connection string -> URI. *(Important: Remember to replace `[YOUR-PASSWORD]` with your actual password, and change `postgresql://` to `postgresql+asyncpg://`)*
+
+#### Frontend Configuration
+1. Navigate to the frontend folder: `cd frontend`
+2. Duplicate the example environment file: `cp .env.example .env.local`
+3. Open `.env.local` and fill in the 2 Supabase variables:
+   - **`NEXT_PUBLIC_SUPABASE_URL`**: Found in Supabase Settings -> API -> Project URL (Same as backend)
+   - **`NEXT_PUBLIC_SUPABASE_ANON_KEY`**: Found in Supabase Settings -> API -> Project API keys -> `anon` public key
+
+### 3. Run the Backend
+Open a new terminal and run:
 ```bash
 cd backend
 
 # Create virtual environment
 python -m venv venv
-venv\Scripts\activate        # Windows
-# source venv/bin/activate   # macOS/Linux
+
+# Activate it
+venv\Scripts\activate        # On Windows
+# source venv/bin/activate   # On macOS/Linux
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Configure environment
-cp .env.example .env
-# Edit .env with your credentials (see Environment Variables below)
-
-# Start the server
+# Start the server (runs on port 8000)
 uvicorn app.main:app --reload --port 8000
 ```
 
-### 3. Frontend Setup
+### 4. Run the Frontend
+Open a second terminal and run:
 ```bash
 cd frontend
 
 # Install dependencies
 npm install
 
-# Configure environment
-cp .env.example .env.local
-# Edit .env.local with your Supabase credentials
-
-# Start the dev server
+# Start the dev server (runs on port 3000)
 npm run dev
 ```
 
-### 4. Database Setup
-Run the SQL schema in your Supabase SQL Editor (or any PostgreSQL client):
-```bash
-# The schema file is located at:
-backend/schema.sql
-```
-This creates all required tables: `ai_provider_configs`, `projects`, `files`, `reviews`, `issues`, `review_files`, `chat_sessions`, and `chat_messages`.
-
 ### 5. Open the Application
-Navigate to `http://localhost:3000` in your browser.
+Navigate to `http://localhost:3000` in your browser. Create an account, and you're ready to go!
+
+---
+
+## Environment Variables Reference
+
+For quick reference, here is what your `.env` files should look like when fully configured:
+
+### Backend (`backend/.env`)
+| Variable | Description | Example |
+|---|---|---|
+| `SUPABASE_URL` | Your Supabase project URL | `https://xxx.supabase.co` |
+| `SUPABASE_JWT_SECRET` | JWT secret for token verification | `your-jwt-secret` |
+| `DATABASE_URL` | Async PostgreSQL connection string | `postgresql+asyncpg://postgres:[YOUR-PASSWORD]...` |
+| `UPLOAD_DIR` | Directory for temporary file uploads | `./uploads` |
+| `CORS_ORIGINS` | Allowed CORS origins | `http://localhost:3000` |
+
+### Frontend (`frontend/.env.local`)
+| Variable | Description | Example |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | `https://xxx.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key | `eyJhbGci...` |
+
+> **Security Note:** Never commit `.env` or `.env.local` files. Both directories include `.gitignore` rules to prevent this.
 
 ---
 
