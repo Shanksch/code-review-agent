@@ -7,11 +7,12 @@ from uuid import UUID
 
 from fastapi import HTTPException
 from sqlmodel import select
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models import FileModel
-from app.services.zip_extractor import IGNORED_DIRS, IGNORED_EXTS, IGNORED_FILES
+from app.services.zip_extractor import IGNORED_DIRS, IGNORED_EXTS, IGNORED_FILES, get_language_from_filename
 
 settings = get_settings()
 
@@ -36,6 +37,12 @@ async def clone_and_store_github(
     project_dir.mkdir(parents=True, exist_ok=True)
     
     try:
+        # Sanitize GitHub URL
+        if not github_url.startswith("https://github.com/"):
+            raise HTTPException(status_code=400, detail="Only https://github.com/ URLs are supported.")
+        if " " in github_url or ";" in github_url or "|" in github_url or "&" in github_url or "$" in github_url:
+            raise HTTPException(status_code=400, detail="Invalid characters in GitHub URL.")
+
         # Clone the repository
         # Use --depth 1 to only get the latest commit and save time/space
         process = subprocess.run(
@@ -92,6 +99,9 @@ async def clone_and_store_github(
             raise e
         raise HTTPException(status_code=500, detail=str(e))
 
+    # Clear existing files for this project in DB
+    await db.execute(delete(FileModel).where(FileModel.project_id == project_id))
+
     if not extracted_files:
         raise HTTPException(status_code=400, detail="No valid source files found in repository.")
 
@@ -102,6 +112,7 @@ async def clone_and_store_github(
                 project_id=project_id,
                 path=info["db_path"],
                 filename=info["filename"],
+                language=get_language_from_filename(info["filename"]),
                 size_bytes=info["size"]
             )
         )

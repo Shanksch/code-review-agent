@@ -301,24 +301,42 @@ Each review template uses a carefully crafted system prompt that:
 
 ---
 
-## 6. Key Engineering Decisions
+## 6. Engineering Decisions (Sequential Lifecycle)
 
+To demonstrate production readiness, architectural decisions were made sequentially across the data lifecycle—from ingestion to processing to presentation.
+
+### Phase 1: Ingestion & Storage
 | Decision | Rationale |
 |---|---|
-| **FastAPI over NestJS** | Python's ecosystem for AI/ML integration is stronger; async-first design matches our non-blocking review engine |
-| **Supabase over raw PostgreSQL** | Managed auth, instant API, row-level security, and hosted Postgres — faster time to production |
-| **SQLModel over raw SQLAlchemy** | Combines Pydantic validation with SQLAlchemy ORM — single model definition for both API schemas and DB models |
-| **Next.js API proxy** | Eliminates CORS issues entirely; the browser only talks to one origin |
-| **Background tasks over queues** | For a 3-day assessment, FastAPI's `BackgroundTasks` provides sufficient async processing without the operational overhead of Redis/Celery |
-| **Hybrid Storage (DB + Disk)** | File metadata is kept in the database to enable rapid UI rendering (e.g., file tree) and relational mapping of issues. Actual file text is kept on the filesystem to avoid bloating the database and dragging down query performance. |
-| **No external state management** | React's built-in `useState` + `useContext` handles all state needs without adding Redux/Zustand complexity |
-| **Generic AI client** | A single `provider_client.py` works with any OpenAI-compatible endpoint — no provider-specific code paths |
+| **Hybrid Storage Architecture** | Storing megabytes of code directly in PostgreSQL columns degrades query performance. **Decision**: File metadata (paths, sizes, language) is stored in the DB to allow millisecond UI tree rendering and relational issue mapping. Raw file contents are stored on the filesystem (`/uploads`) for fast I/O processing. |
+| **Data Integrity on Re-ingestion** | When re-importing a project via ZIP or GitHub, existing files and their associated issues are cleanly wiped and rebuilt to prevent database bloat, ghost issues, and duplication. |
+| **Binary & Size Filtering** | Uploaded codebases often contain heavy binaries (images, compiled assets) or massive minified files. **Decision**: The `zip_extractor` strictly filters out non-text files and limits file sizes during extraction to prevent blowing out the LLM context window. |
+
+### Phase 2: Core Processing & Backend
+| Decision | Rationale |
+|---|---|
+| **FastAPI over NestJS** | Python is the de-facto language for AI integrations. FastAPI's async-first architecture perfectly handles the heavily I/O-bound nature of waiting for LLM responses without blocking the event loop. |
+| **Async Background Tasks** | LLM generation is slow. **Decision**: Instead of blocking the HTTP request, reviews are offloaded to FastAPI `BackgroundTasks`. The frontend polls for completion. This keeps the API highly responsive. |
+| **Idempotent Issue Deduplication** | **Decision**: Issue storage is strictly tied to the `file_id` and the specific review template. Stale issues for a file are cleanly deleted before new ones are inserted, guaranteeing the DB reflects the most recent analysis. |
+
+### Phase 3: AI Integration
+| Decision | Rationale |
+|---|---|
+| **Generic Provider Abstraction** | The assessment required supporting OpenAI, LM Studio, Ollama, and OpenRouter. **Decision**: Instead of writing separate SDK logic for each, I built a unified `provider_client` that targets the standard `/chat/completions` REST API, making the system instantly compatible with any future local or cloud model. |
+| **Architecture-Aware Context Building** | Dumping unstructured code into an LLM yields poor results. **Decision**: The context builder injects file paths alongside the code, giving the AI model a structural understanding of how components interact. |
+
+### Phase 4: Frontend & Presentation
+| Decision | Rationale |
+|---|---|
+| **Next.js API Proxy** | **Decision**: To eliminate complex CORS configurations and preflight `OPTIONS` requests, Next.js rewrites all `/api/*` requests to the backend. The browser only ever talks to one origin. |
+| **No External State Management** | **Decision**: React's built-in `useState` and `useContext` are sufficient. The workspace state is hoisted to the top-level page component and passed down, avoiding the boilerplate of Redux/Zustand while keeping the data flow strictly unidirectional and predictable. |
+| **Severity Propagation** | **Decision**: The UI uses a "bubble up" logic for issue severities. A directory icon in the file explorer automatically displays a red dot if *any* file deep within it has a critical issue, allowing developers to locate technical debt instantly. |
 
 ---
 
 ## 7. Security Considerations
 
-- **JWT verification** on every API request with Supabase JWT secret
+- **Strict JWT verification** — Every API request is verified against the Supabase JWT secret (`verify_signature=True`), enforcing hard cryptographic boundaries rather than trusting the payload blindly.
 - **User isolation** — All queries filter by `user_id` to prevent cross-user data access
 - **No secrets in code** — All sensitive values loaded from environment variables
 - **API key encryption** — Provider API keys are stored in the database (Supabase provides at-rest encryption)

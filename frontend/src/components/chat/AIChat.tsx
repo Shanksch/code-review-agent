@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Loader2, Send, Bot, User, Code, AlertCircle } from "lucide-react";
+import { Loader2, Send, Bot, User, Code, AlertCircle, ChevronDown } from "lucide-react";
 import { api } from "@/lib/api";
 
 interface Message {
@@ -23,6 +23,8 @@ export default function AIChat({ projectId, context }: AIChatProps) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [contextMode, setContextMode] = useState<'issue' | 'file' | 'code' | 'project'>('project');
+  const [isContextOpen, setIsContextOpen] = useState(false);
+  const [selectedCodeSnippet, setSelectedCodeSnippet] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -43,10 +45,16 @@ export default function AIChat({ projectId, context }: AIChatProps) {
   useEffect(() => {
     const handlePromptEvent = ((e: CustomEvent) => {
       const { prompt, code } = e.detail;
-      // You can just set the input, or send automatically.
-      const fullPrompt = `${prompt}\n\nSelected Code:\n\`\`\`\n${code}\n\`\`\``;
-      setInput(fullPrompt);
-      // Wait a tick and then trigger send? For now let's just prepopulate and let user hit send.
+      if (typeof prompt === 'string') setInput(prompt);
+      if (code) {
+        setSelectedCodeSnippet(code);
+        setContextMode('code');
+      }
+      // Auto focus the input
+      setTimeout(() => {
+        const textarea = document.querySelector('textarea');
+        if (textarea) textarea.focus();
+      }, 50);
     }) as EventListener;
     
     window.addEventListener("ai-chat-prompt", handlePromptEvent);
@@ -67,7 +75,11 @@ export default function AIChat({ projectId, context }: AIChatProps) {
       const response: any = await api.post(`/projects/${projectId}/chat`, {
         message: userMsg,
         history: messages,
-        context: { ...context, activeMode: contextMode }
+        context: { 
+          ...context, 
+          activeMode: contextMode,
+          selectedCode: selectedCodeSnippet
+        }
       });
       
       setMessages(prev => [...prev, { role: "assistant", content: response.reply, files_used: response.files_used }]);
@@ -82,54 +94,83 @@ export default function AIChat({ projectId, context }: AIChatProps) {
   return (
     <div className="flex flex-col h-full bg-[#0d1117]">
       {/* Context Indicator */}
-      <div className="p-4 border-b border-white/5 bg-zinc-900/30 flex flex-col gap-3 shrink-0">
+      <div className="p-4 border-b border-white/5 bg-zinc-900/30 flex flex-col gap-2 shrink-0 relative z-10">
         <div className="text-[10px] uppercase font-bold text-zinc-500 tracking-wider">Context</div>
         
-        <div className="space-y-3">
-          {context.issue && (
-            <label className="flex items-start gap-3 cursor-pointer group">
-              <input type="radio" checked={contextMode === 'issue'} onChange={() => setContextMode('issue')} className="hidden" />
-              <div className={`mt-0.5 w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${contextMode === 'issue' ? 'border-sky-500' : 'border-zinc-600 group-hover:border-zinc-400'}`}>
-                {contextMode === 'issue' && <div className="w-2 h-2 rounded-full bg-sky-500" />}
-              </div>
-              <div className="flex flex-col gap-0.5 leading-none">
-                <span className={`text-sm ${contextMode === 'issue' ? 'text-zinc-200 font-medium' : 'text-zinc-400'}`}>Current issue</span>
-                <span className="text-xs text-sky-400/80 line-clamp-1 mt-1">{context.issue.title}</span>
-              </div>
-            </label>
-          )}
+        <button 
+          onClick={() => setIsContextOpen(!isContextOpen)}
+          className="flex items-center justify-between w-full px-3 py-2 bg-zinc-950 border border-white/10 rounded-lg hover:border-white/20 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-sky-500" />
+            <span className="text-xs font-medium text-zinc-300">
+              {contextMode === 'issue' ? 'Current issue' :
+               contextMode === 'file' ? 'Current file' :
+               contextMode === 'code' ? 'Selected code' : 'Entire project'}
+            </span>
+          </div>
+          <ChevronDown className={`w-4 h-4 text-zinc-500 transition-transform ${isContextOpen ? 'rotate-180' : ''}`} />
+        </button>
 
-          {context.fileName && (
-            <label className="flex items-start gap-3 cursor-pointer group">
-              <input type="radio" checked={contextMode === 'file'} onChange={() => setContextMode('file')} className="hidden" />
-              <div className={`mt-0.5 w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${contextMode === 'file' ? 'border-sky-500' : 'border-zinc-600 group-hover:border-zinc-400'}`}>
-                {contextMode === 'file' && <div className="w-2 h-2 rounded-full bg-sky-500" />}
-              </div>
-              <div className="flex flex-col gap-0.5 leading-none">
-                <span className={`text-sm ${contextMode === 'file' ? 'text-zinc-200 font-medium' : 'text-zinc-400'}`}>Current file</span>
-                <span className="text-xs text-zinc-500 font-mono truncate mt-1">{context.fileName}</span>
-              </div>
-            </label>
-          )}
+        {isContextOpen && (
+          <div className="absolute top-[calc(100%-8px)] left-4 right-4 bg-zinc-950 border border-white/10 rounded-b-lg shadow-xl p-3 space-y-3 z-20">
+            {context.issue && (
+              <label 
+                className="flex items-start gap-3 cursor-pointer group" 
+                onClick={() => { setContextMode('issue'); setIsContextOpen(false); }}
+              >
+                <input type="radio" checked={contextMode === 'issue'} readOnly className="hidden" />
+                <div className={`mt-0.5 w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${contextMode === 'issue' ? 'border-sky-500' : 'border-zinc-600 group-hover:border-zinc-400'}`}>
+                  {contextMode === 'issue' && <div className="w-2 h-2 rounded-full bg-sky-500" />}
+                </div>
+                <div className="flex flex-col gap-0.5 leading-none">
+                  <span className={`text-sm ${contextMode === 'issue' ? 'text-zinc-200 font-medium' : 'text-zinc-400'}`}>Current issue</span>
+                  <span className="text-xs text-sky-400/80 line-clamp-1 mt-1">{context.issue.title}</span>
+                </div>
+              </label>
+            )}
 
-          {context.lines && context.lines.length > 0 && (
-            <label className="flex items-center gap-3 cursor-pointer group">
-              <input type="radio" checked={contextMode === 'code'} onChange={() => setContextMode('code')} className="hidden" />
-              <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${contextMode === 'code' ? 'border-sky-500' : 'border-zinc-600 group-hover:border-zinc-400'}`}>
-                {contextMode === 'code' && <div className="w-2 h-2 rounded-full bg-sky-500" />}
-              </div>
-              <span className={`text-sm ${contextMode === 'code' ? 'text-zinc-200 font-medium' : 'text-zinc-400'}`}>Selected code</span>
-            </label>
-          )}
+            {context.fileName && (
+              <label 
+                className="flex items-start gap-3 cursor-pointer group" 
+                onClick={() => { setContextMode('file'); setIsContextOpen(false); }}
+              >
+                <input type="radio" checked={contextMode === 'file'} readOnly className="hidden" />
+                <div className={`mt-0.5 w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${contextMode === 'file' ? 'border-sky-500' : 'border-zinc-600 group-hover:border-zinc-400'}`}>
+                  {contextMode === 'file' && <div className="w-2 h-2 rounded-full bg-sky-500" />}
+                </div>
+                <div className="flex flex-col gap-0.5 leading-none">
+                  <span className={`text-sm ${contextMode === 'file' ? 'text-zinc-200 font-medium' : 'text-zinc-400'}`}>Current file</span>
+                  <span className="text-xs text-zinc-500 font-mono truncate mt-1">{context.fileName}</span>
+                </div>
+              </label>
+            )}
 
-          <label className="flex items-center gap-3 cursor-pointer group">
-            <input type="radio" checked={contextMode === 'project'} onChange={() => setContextMode('project')} className="hidden" />
-            <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${contextMode === 'project' ? 'border-sky-500' : 'border-zinc-600 group-hover:border-zinc-400'}`}>
-              {contextMode === 'project' && <div className="w-2 h-2 rounded-full bg-sky-500" />}
-            </div>
-            <span className={`text-sm ${contextMode === 'project' ? 'text-zinc-200 font-medium' : 'text-zinc-400'}`}>Entire project</span>
-          </label>
-        </div>
+            {context.lines && context.lines.length > 0 && (
+              <label 
+                className="flex items-center gap-3 cursor-pointer group" 
+                onClick={() => { setContextMode('code'); setIsContextOpen(false); }}
+              >
+                <input type="radio" checked={contextMode === 'code'} readOnly className="hidden" />
+                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${contextMode === 'code' ? 'border-sky-500' : 'border-zinc-600 group-hover:border-zinc-400'}`}>
+                  {contextMode === 'code' && <div className="w-2 h-2 rounded-full bg-sky-500" />}
+                </div>
+                <span className={`text-sm ${contextMode === 'code' ? 'text-zinc-200 font-medium' : 'text-zinc-400'}`}>Selected code</span>
+              </label>
+            )}
+
+            <label 
+              className="flex items-center gap-3 cursor-pointer group" 
+              onClick={() => { setContextMode('project'); setIsContextOpen(false); }}
+            >
+              <input type="radio" checked={contextMode === 'project'} readOnly className="hidden" />
+              <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${contextMode === 'project' ? 'border-sky-500' : 'border-zinc-600 group-hover:border-zinc-400'}`}>
+                {contextMode === 'project' && <div className="w-2 h-2 rounded-full bg-sky-500" />}
+              </div>
+              <span className={`text-sm ${contextMode === 'project' ? 'text-zinc-200 font-medium' : 'text-zinc-400'}`}>Entire project</span>
+            </label>
+          </div>
+        )}
       </div>
 
       {/* Messages */}
@@ -174,7 +215,7 @@ export default function AIChat({ projectId, context }: AIChatProps) {
             <div className={`flex flex-col gap-1 w-full ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
               <div className={`text-sm py-2 px-3 rounded-xl max-w-[85%] ${
                 m.role === 'user' ? 'bg-sky-500/10 border border-sky-500/20 text-sky-100' : 'bg-zinc-800/50 border border-white/5 text-zinc-200'
-              } whitespace-pre-wrap`}>
+              } whitespace-pre-wrap break-words`}>
                 {m.content}
               </div>
               {m.files_used && m.files_used.length > 0 && (

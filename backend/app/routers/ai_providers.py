@@ -3,7 +3,7 @@ from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 import httpx
 from pydantic import BaseModel
 
@@ -75,7 +75,7 @@ async def test_provider_connection(
                 timeout=10.0
             )
             res.raise_for_status()
-            config.last_tested_at = datetime.utcnow()
+            config.last_tested_at = datetime.now(timezone.utc).replace(tzinfo=None)
             await db.commit()
             return {"status": "success", "message": "Connection successful"}
     except Exception as e:
@@ -155,13 +155,11 @@ async def get_provider_models(
     try:
         async with httpx.AsyncClient() as client:
             url = f"{config.base_url.rstrip('/')}/models"
-            print(f"Fetching models from: {url}")
             res = await client.get(
                 url,
                 headers={"Authorization": f"Bearer {config.api_key}"},
                 timeout=10.0
             )
-            print(f"Models response status: {res.status_code}")
             res.raise_for_status()
             data = res.json()
             if isinstance(data, dict) and "data" in data:
@@ -179,8 +177,6 @@ async def get_provider_models(
                 
             return {"models": models}
     except httpx.HTTPStatusError as e:
-        print(f"HTTP Error fetching models: {e.response.text}")
         raise HTTPException(status_code=400, detail=f"Failed to fetch models: {str(e)}")
     except Exception as e:
-        print(f"Error fetching models: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Failed to fetch models: {str(e)}")

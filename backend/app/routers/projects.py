@@ -211,14 +211,23 @@ async def run_project_review(
 @router.get("/projects/{project_id}/reviews")
 async def get_project_reviews(
     project_id: UUID,
+    skip: int = 0,
+    limit: int = 20,
     user_id: UUID = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     from app.models import Review
+    
+    # Get total count
+    from sqlalchemy import func
+    total_count = (await db.execute(select(func.count(Review.id)).where(Review.project_id == project_id, Review.user_id == user_id))).scalar() or 0
+
     stmt = (
         select(Review)
         .where(Review.project_id == project_id, Review.user_id == user_id)
         .order_by(Review.created_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
     reviews = (await db.execute(stmt)).scalars().all()
     
@@ -277,7 +286,56 @@ async def get_project_reviews(
             "issue_count": review_issue_counts.get(r.id, 0),
             "severities": review_severities.get(r.id, {})
         })
-    return {"reviews": review_list}
+    return {
+        "reviews": review_list,
+        "total": total_count,
+        "skip": skip,
+        "limit": limit
+    }
+
+@router.get("/projects/{project_id}/reviews/{review_id}")
+async def get_project_review_details(
+    project_id: UUID,
+    review_id: UUID,
+    user_id: UUID = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    from app.models import Review, Issue, FileModel
+    stmt = (
+        select(Review)
+        .where(Review.id == review_id, Review.project_id == project_id, Review.user_id == user_id)
+    )
+    review = (await db.execute(stmt)).scalars().first()
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+        
+    issue_stmt = (
+        select(Issue, FileModel)
+        .join(FileModel, FileModel.id == Issue.file_id, isouter=True)
+        .where(Issue.review_id == review_id)
+        .order_by(Issue.severity.desc())
+    )
+    results = (await db.execute(issue_stmt)).all()
+    
+    issues_list = []
+    for issue, file_model in results:
+        issue_dict = issue.dict()
+        issue_dict['file_path'] = file_model.path if file_model else None
+        issue_dict['file_name'] = file_model.filename if file_model else None
+        issues_list.append(issue_dict)
+        
+    return {
+        "id": review.id,
+        "project_id": review.project_id,
+        "user_id": review.user_id,
+        "scope": review.scope.value if hasattr(review.scope, "value") else str(review.scope),
+        "template_type": review.template_type.value if hasattr(review.template_type, "value") else str(review.template_type),
+        "summary": review.summary,
+        "status": review.status,
+        "error_message": review.error_message,
+        "created_at": review.created_at,
+        "issues": issues_list
+    }
 
 @router.get("/projects/{project_id}/stats")
 async def get_project_stats(
@@ -360,10 +418,13 @@ async def get_project_stats(
 async def get_project_issues(
     project_id: UUID,
     path_prefix: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 50,
     user_id: UUID = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     from app.models import Issue, Review, FileModel
+    from sqlalchemy import func
     
     # We want issues from reviews that belong to this project
     # We can join Issue -> FileModel to filter by path_prefix if provided
@@ -378,7 +439,11 @@ async def get_project_issues(
         # Note: SQLite and Postgres both support LIKE, but path_prefix should be sanitized
         stmt = stmt.where(FileModel.path.startswith(path_prefix))
         
-    stmt = stmt.order_by(Issue.created_at.desc())
+    # Get total count
+    count_stmt = select(func.count(Issue.id)).select_from(stmt.subquery())
+    total_count = (await db.execute(count_stmt)).scalar() or 0
+        
+    stmt = stmt.order_by(Issue.created_at.desc()).offset(skip).limit(limit)
     
     results = (await db.execute(stmt)).all()
     
@@ -389,7 +454,12 @@ async def get_project_issues(
         issue_dict['file_name'] = file_model.filename
         issues_list.append(issue_dict)
         
-    return {"issues": issues_list}
+    return {
+        "issues": issues_list,
+        "total": total_count,
+        "skip": skip,
+        "limit": limit
+    }
 
 
 class ChatRequest(BaseModel):
@@ -441,7 +511,21 @@ async def chat_with_assistant(
         stmt = select(FileModel).where(FileModel.id == request.context["fileId"], FileModel.project_id == project_id)
         file_model = (await db.execute(stmt)).scalar_one_or_none()
         if file_model:
-            context_str += f"Current File ({file_model.path}):\n```\n{file_model.content}\n```\n\n"
+            from app.core.config import get_settings
+            import os
+            settings = get_settings()
+            file_path = os.path.join(settings.upload_dir, str(project_id), file_model.path)
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+            except Exception:
+                content = "/* Could not read file content */"
+                
+            context_str += f"Current File ({file_model.path}):\n```\n{content}\n```\n\n"
+            
+            if active_mode == "code" and request.context.get("selectedCode"):
+                context_str += f"The user has specifically highlighted this code snippet in {file_model.path}:\n```\n{request.context.get('selectedCode')}\n```\n\n"
+                
             files_used.append(file_model.path)
             
     if context_str:

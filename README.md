@@ -12,6 +12,18 @@ Built with **Next.js 16**, **FastAPI**, **PostgreSQL (Supabase)**, and **Tailwin
 
 ---
 
+## Assessment Requirements Mapping
+
+| Requirement | Implementation |
+|---|---|
+| **Tech Stack** | **Frontend**: Next.js (App Router), TypeScript, Tailwind CSS.<br>**Backend**: FastAPI (Python), SQLModel.<br>**Database**: PostgreSQL (via Supabase). |
+| **Code Upload** | Supports ZIP file uploads and GitHub repository imports. Extracts files, filters binaries, and stores metadata in PostgreSQL while keeping raw contents on disk to prevent DB bloat. |
+| **Code Reviews** | Asynchronous background processing pipeline. Supports configurable review scopes (single file, selection, or full project) and templates (Security, Performance, Quality). |
+| **AI Provider Support** | Built a generic, dynamic `ProviderClient` that connects to any OpenAI-compatible `/chat/completions` endpoint. Tested with OpenAI, LM Studio, Ollama, and OpenRouter. |
+| **Production-Oriented** | Includes JWT-based authentication, non-blocking async execution, error boundaries, strict CORS proxying, and comprehensive database cascades (`ON DELETE CASCADE`). |
+
+---
+
 ## Features
 
 ### Core
@@ -45,6 +57,8 @@ Users can configure per-provider:
 ### Bonus Features
 - **Technical Debt Scanner** — Issues are automatically classified by severity (Critical / High / Medium / Low) with visual indicators across the file tree, enabling quick identification of high-priority technical debt
 - **Architecture-Aware Reviews** — The context builder intelligently assembles file content with path awareness, giving the AI model structural understanding of the project
+- **Documentation Generator** — One-click generation of project-level documentation based on the codebase structure and contents
+- **Unit Test Generator** — Automated generation of unit tests for individual files, instantly viewable in a specialized modal
 
 ---
 

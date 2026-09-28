@@ -108,6 +108,8 @@ During a follow-up iteration, several minor bugs and optimizations were handled 
 - **TypeScript Strictness**: Resolved a nullability type error in `ProviderSettingsModal.tsx` when saving a new AI provider configuration.
 - **Unified Gitignore**: Combined separate frontend and backend `.gitignore` files into a single root-level file for better monorepo management.
 - **Context Optimization for AI Chat (Architectural Decision)**: When the user selected "Entire project" as the chat context, the initial implementation either failed to provide code or attempted to dump the entire codebase into the prompt. I manually instructed the AI to rewrite this logic in `projects.py` to instead query the database for *existing issues* (found during the review phase) and summarize them for the AI chat. This engineering decision drastically reduces token usage, prevents context window overflow, and results in more accurate, targeted AI responses.
+- **Security & Data Integrity Upgrade**: I manually implemented strict JWT signature verification (`verify_signature=True`) in the authentication dependency to ensure cryptographic validation of session tokens. I also fixed database bloat by writing custom cleanup logic during ZIP/GitHub re-imports to flush old records, and updated all temporal logic to use timezone-aware Python 3.12+ `datetime.now(timezone.utc)`.
+- **Bonus Feature Implementation**: I designed and added the API endpoints and React UI for the "Documentation Generator" and "Unit Test Generator" bonus features, directing the AI on how to structure the modal overlay and API proxy connections.
 
 ---
 
@@ -118,8 +120,12 @@ Below are representative examples of prompts I used during development. These ar
 ### Architecture Research
 > "I'm building an async review engine in FastAPI that needs to process multiple files against an AI API without blocking the HTTP response. Compare BackgroundTasks vs. Celery for this use case — I need something that works without Redis in a 3-day development window."
 
-### Debugging
+### Debugging & UI Polish
 > "My SQLAlchemy async session is raising 'greenlet_spawn has not been called' when I try to access a relationship attribute outside of the async context. I'm using SQLModel with asyncpg. What's the correct pattern for eager loading relationships in async SQLAlchemy 2.0?"
+
+> "When clicking 'Ask AI' on highlighted text, the raw code string dumps into the chat input, which is ugly. How can I store the highlighted code behind the scenes and inject it into the backend's system context instead of pasting it in the frontend UI?"
+
+> "Long code strings inside Tailwind CSS chat bubbles are spilling horizontally out of their containers. What utility classes (like `break-words whitespace-pre-wrap`) correctly enforce text wrapping on uninterrupted strings?"
 
 ### API Integration
 > "I need to build a generic HTTP client that works with any OpenAI-compatible endpoint (OpenAI, LM Studio, Ollama). They all use POST /v1/chat/completions with the same request schema. Show me the httpx async implementation with proper error handling for different provider error formats."

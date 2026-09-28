@@ -8,6 +8,7 @@ from uuid import UUID
 
 from fastapi import UploadFile, HTTPException
 from sqlmodel import select
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -86,6 +87,18 @@ def is_secret_file(filename: str) -> bool:
     if name_lower in ["credentials.json", "service-account.json"]:
         return True
     return False
+
+def get_language_from_filename(filename: str) -> str:
+    ext = filename.split(".")[-1].lower() if "." in filename else ""
+    lang_map = {
+        "py": "python", "js": "javascript", "jsx": "javascript", 
+        "ts": "typescript", "tsx": "typescript", "java": "java",
+        "c": "c", "cpp": "cpp", "h": "c", "hpp": "cpp",
+        "cs": "csharp", "go": "go", "rs": "rust", "rb": "ruby",
+        "php": "php", "html": "html", "css": "css", "json": "json",
+        "md": "markdown", "sql": "sql", "sh": "shell", "yaml": "yaml", "yml": "yaml"
+    }
+    return lang_map.get(ext, "")
 
 def redact_secrets(content: str) -> str:
     """Redacts values in .env or similar config files."""
@@ -207,10 +220,7 @@ async def extract_and_store_zip(
             zip_path.unlink()
 
     # Clear existing files for this project in DB
-    # We do a delete and re-insert approach for clean state
-    await db.execute(select(FileModel).where(FileModel.project_id == project_id))
-    # Actually, SQLAlchemy async delete requires a different syntax or manual deletion
-    # For now, we'll just let the caller handle old files, or we assume fresh projects
+    await db.execute(delete(FileModel).where(FileModel.project_id == project_id))
     
     if not extracted_files:
         raise HTTPException(status_code=400, detail="No valid source files found in ZIP.")
@@ -222,6 +232,7 @@ async def extract_and_store_zip(
                 project_id=project_id,
                 path=info["db_path"],
                 filename=info["filename"],
+                language=get_language_from_filename(info["filename"]),
                 size_bytes=info["size"]
             )
         )
@@ -305,6 +316,7 @@ async def extract_and_store_files(
                 project_id=project_id,
                 path=info["db_path"],
                 filename=info["filename"],
+                language=get_language_from_filename(info["filename"]),
                 size_bytes=info["size"]
             )
         )

@@ -1,16 +1,19 @@
 import { useState } from "react";
-import { FolderTree, Activity, CheckCircle, Clock, ChevronRight, Search, Zap, Check, AlertCircle, ShieldAlert, CheckCircle2 } from "lucide-react";
+import { FolderTree, Activity, CheckCircle, Clock, ChevronRight, Search, Zap, Check, AlertCircle, ShieldAlert, CheckCircle2, Eye } from "lucide-react";
+import ReviewDetailsModal from "./ReviewDetailsModal";
 
 interface OverviewTabProps {
+  projectId: string;
   stats: any;
   reviews: any[];
   onRunReview?: () => void;
   onReviewClick?: (reviewId: string) => void;
 }
 
-export default function OverviewTab({ stats, reviews, onRunReview, onReviewClick }: OverviewTabProps) {
+export default function OverviewTab({ projectId, stats, reviews, onRunReview, onReviewClick }: OverviewTabProps) {
   const [reviewSearch, setReviewSearch] = useState("");
   const [reviewFilter, setReviewFilter] = useState("All");
+  const [detailsReviewId, setDetailsReviewId] = useState<string | null>(null);
 
   const severities = stats?.severities || {};
   const totalIssues = stats?.total_issues || 0;
@@ -215,8 +218,19 @@ export default function OverviewTab({ stats, reviews, onRunReview, onReviewClick
                     onClick={() => onReviewClick && onReviewClick(review.id)}
                   >
                     <td className="p-4">
-                      <div className="text-zinc-200 font-medium capitalize mb-1">{review.scope.replace("_", " ")}</div>
-                      <div className="text-xs text-zinc-500 capitalize">{review.template_type.replace("_", " ")}</div>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-zinc-200 font-medium capitalize mb-1">{review.scope.replace("_", " ")}</div>
+                          <div className="text-xs text-zinc-500 capitalize">{review.template_type.replace("_", " ")}</div>
+                        </div>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setDetailsReviewId(review.id); }}
+                          className="p-1.5 bg-zinc-800 text-zinc-400 hover:text-white rounded hover:bg-zinc-700 transition-colors opacity-0 group-hover:opacity-100"
+                          title="View Details"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                     <td className="p-4">
                       <div className="flex items-center gap-2">
@@ -255,6 +269,14 @@ export default function OverviewTab({ stats, reviews, onRunReview, onReviewClick
           </div>
         )}
       </div>
+
+      {detailsReviewId && projectId && (
+        <ReviewDetailsModal
+          projectId={projectId}
+          reviewId={detailsReviewId}
+          onClose={() => setDetailsReviewId(null)}
+        />
+      )}
     </div>
   );
 }

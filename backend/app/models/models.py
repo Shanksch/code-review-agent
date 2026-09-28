@@ -1,5 +1,8 @@
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
+
+def utc_now():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 from uuid import UUID, uuid4
 
 from sqlmodel import SQLModel, Field, Relationship
@@ -59,8 +62,8 @@ class AiProviderConfig(SQLModel, table=True):
     temperature: Optional[float] = Field(default=None)
     max_tokens: Optional[int] = Field(default=None)
     last_tested_at: Optional[datetime] = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
     projects: list["Project"] = Relationship(back_populates="ai_provider_config")
 
@@ -76,8 +79,8 @@ class Project(SQLModel, table=True):
     )
     name: str
     description: str = Field(default="")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
     ai_provider_config: Optional[AiProviderConfig] = Relationship(
         back_populates="projects"
@@ -107,7 +110,7 @@ class FileModel(SQLModel, table=True):
     language: str = Field(default="")
     size_bytes: int = Field(default=0)
     content: str = Field(default="", sa_column=Column(Text))
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
 
     project: Optional[Project] = Relationship(back_populates="files")
     issues: list["Issue"] = Relationship(
@@ -128,7 +131,7 @@ class Review(SQLModel, table=True):
     summary: str = Field(default="")
     status: str = Field(default="pending")
     error_message: Optional[str] = Field(default=None)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
 
     project: Optional[Project] = Relationship(back_populates="reviews")
     issues: list["Issue"] = Relationship(
@@ -155,7 +158,7 @@ class Issue(SQLModel, table=True):
     line_end: Optional[int] = Field(default=None)
     recommendation: str = Field(default="")
     command_slug: str
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
 
     review: Optional[Review] = Relationship(back_populates="issues")
     file: Optional[FileModel] = Relationship(back_populates="issues")
@@ -167,7 +170,7 @@ class ChatSession(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     project_id: UUID = Field(foreign_key="projects.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
 
     project: Optional[Project] = Relationship(back_populates="chat_session")
     messages: list["ChatMessage"] = Relationship(
@@ -185,6 +188,6 @@ class ChatMessage(SQLModel, table=True):
     role: ChatRole = Field(sa_column=Column(String))
     content: str = Field(sa_column=Column(Text))
     issue_id: Optional[UUID] = Field(default=None, foreign_key="issues.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utc_now)
 
     session: Optional[ChatSession] = Relationship(back_populates="messages")

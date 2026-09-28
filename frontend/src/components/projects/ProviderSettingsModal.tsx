@@ -39,6 +39,31 @@ export default function ProviderSettingsModal({ projectId, currentConfigId, conf
   
   const [saving, setSaving] = useState(false);
   
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+
+  const handleFetchModels = async () => {
+    if (!baseUrl) return;
+    setFetchingModels(true);
+    try {
+      const url = baseUrl.replace(/\/$/, '') + '/models';
+      const res = await fetch(url, {
+        headers: apiKey ? { 'Authorization': `Bearer ${apiKey}` } : {}
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data && data.data) {
+        setAvailableModels(data.data.map((m: any) => m.id));
+      } else {
+        throw new Error("Invalid response format");
+      }
+    } catch (err: any) {
+      alert("Failed to fetch models: " + err.message);
+    } finally {
+      setFetchingModels(false);
+    }
+  };
+  
   useEffect(() => {
     if (selectedConfigId) {
       const config = configs.find(c => c.id === selectedConfigId);
@@ -205,13 +230,31 @@ export default function ProviderSettingsModal({ projectId, currentConfigId, conf
           <div>
             <label className="label-text block">Model Name</label>
             <div className="text-xs text-zinc-500 mb-2">Specify the exact model identifier (e.g. gpt-4o, llama3). Make sure it matches what your provider expects.</div>
-            <input 
-              type="text" 
-              value={modelName} 
-              onChange={e => setModelName(e.target.value)} 
-              className="input-field"
-              placeholder="gpt-4o"
-            />
+            <div className="flex gap-2">
+              <input 
+                type="text" 
+                value={modelName} 
+                onChange={e => setModelName(e.target.value)} 
+                className="input-field flex-1"
+                placeholder="gpt-4o"
+                list="model-suggestions"
+              />
+              <button
+                type="button"
+                onClick={handleFetchModels}
+                disabled={fetchingModels || !baseUrl}
+                className="btn-secondary px-3 py-1.5 flex items-center gap-2 shrink-0"
+                title="Fetch available models from provider"
+              >
+                {fetchingModels ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                Get Models
+              </button>
+            </div>
+            <datalist id="model-suggestions">
+              {availableModels.map(m => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
           </div>
 
           {/* Advanced Settings */}

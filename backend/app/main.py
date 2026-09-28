@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
-from app.routers import ai_providers, projects, files
+from app.routers import ai_providers, projects, files, generators
 
 
 settings = get_settings()
@@ -43,6 +43,7 @@ app.add_middleware(
 app.include_router(ai_providers.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
 app.include_router(files.router, prefix="/api")
+app.include_router(generators.router, prefix="/api")
 
 
 @app.get("/api/health")

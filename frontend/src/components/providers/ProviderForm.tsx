@@ -17,6 +17,31 @@ export default function ProviderForm({ onSuccess, onCancel }: ProviderFormProps)
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [testSuccess, setTestSuccess] = useState(false);
+  
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+
+  const handleFetchModels = async () => {
+    if (!baseUrl) return;
+    setFetchingModels(true);
+    try {
+      const url = baseUrl.replace(/\/$/, '') + '/models';
+      const res = await fetch(url, {
+        headers: apiKey && apiKey !== 'not-needed' ? { 'Authorization': `Bearer ${apiKey}` } : {}
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data && data.data) {
+        setAvailableModels(data.data.map((m: any) => m.id));
+      } else {
+        throw new Error("Invalid response format");
+      }
+    } catch (err: any) {
+      alert("Failed to fetch models: " + err.message);
+    } finally {
+      setFetchingModels(false);
+    }
+  };
 
   const presetConfigs = [
     { name: "OpenAI", url: "https://api.openai.com/v1", model: "gpt-4o" },
@@ -128,17 +153,34 @@ export default function ProviderForm({ onSuccess, onCancel }: ProviderFormProps)
           </div>
 
           <div>
-            <label className="label-text flex items-center gap-2">
+            <label className="label-text flex items-center gap-2 mb-1">
               <BrainCircuit className="w-4 h-4 text-zinc-500" /> Model Name
             </label>
-            <input
-              type="text"
-              required
-              value={modelName}
-              onChange={(e) => { setModelName(e.target.value); setTestSuccess(false); }}
-              className="input-field"
-              placeholder="gpt-4o"
-            />
+            <div className="flex gap-2">
+              <input
+                type="text"
+                required
+                value={modelName}
+                onChange={(e) => { setModelName(e.target.value); setTestSuccess(false); }}
+                className="input-field flex-1"
+                placeholder="gpt-4o"
+                list="providerform-models"
+              />
+              <button
+                type="button"
+                onClick={handleFetchModels}
+                disabled={fetchingModels || !baseUrl}
+                className="btn-secondary px-3 py-1.5 flex items-center gap-2 shrink-0"
+                title="Fetch available models from provider"
+              >
+                {fetchingModels ? <Loader2 className="w-4 h-4 animate-spin" /> : "Get Models"}
+              </button>
+            </div>
+            <datalist id="providerform-models">
+              {availableModels.map(m => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
           </div>
 
           {error && (

@@ -9,21 +9,41 @@ import FileTree, { TreeNode } from "@/components/projects/FileTree";
 import ReviewScopeModal, { ReviewOptions } from "@/components/projects/ReviewScopeModal";
 import CodeViewer from "@/components/projects/CodeViewer";
 import OverviewTab from "@/components/projects/OverviewTab";
-import AIChat from "@/components/chat/AIChat";
 import ProviderSettingsModal from "@/components/projects/ProviderSettingsModal";
-import { Loader2, UploadCloud, FolderTree, AlertCircle, RefreshCw, Settings, Check, CheckCircle2 } from "lucide-react";
+import WorkspaceToolbar from "@/components/projects/WorkspaceToolbar";
+import IssueSidebar from "@/components/projects/IssueSidebar";
+import { Loader2, UploadCloud, FolderTree, AlertCircle, RefreshCw } from "lucide-react";
+
+export interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  ai_provider_config_id?: string;
+}
+
+export interface AIConfig {
+  id: string;
+  name: string;
+  [key: string]: any;
+}
+
+export interface Review {
+  id: string;
+  status: string;
+  summary?: string;
+  created_at: string;
+  [key: string]: any;
+}
 
 export default function ProjectWorkspace({ params }: { params: Promise<{ projectId: string }> }) {
   // Use React.use() to unwrap the params promise
   const { projectId } = use(params);
 
   const [loading, setLoading] = useState(true);
-  const [project, setProject] = useState<any>(null);
+  const [project, setProject] = useState<Project | null>(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [configs, setConfigs] = useState<any[]>([]);
-  const [isEditingName, setIsEditingName] = useState(false);
-  const [editedName, setEditedName] = useState("");
+  const [configs, setConfigs] = useState<AIConfig[]>([]);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [selectedIssue, setSelectedIssue] = useState<any>(null);
 
@@ -37,15 +57,42 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ project
   const [fileIssues, setFileIssues] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<"overview" | "code">("overview");
   const [rightTab, setRightTab] = useState<"issues" | "chat">("issues");
-  const [issueSearch, setIssueSearch] = useState("");
   const [selectedReviewId, setSelectedReviewId] = useState<string | null>(null);
   const [fixes, setFixes] = useState<Record<string, { loading: boolean, diff?: string }>>({});
-  const [issueSeverityFilter, setIssueSeverityFilter] = useState("all");
   const [fileSearch, setFileSearch] = useState("");
   const [contentLoading, setContentLoading] = useState(false);
   const [stats, setStats] = useState<any>(null);
-  const [reviews, setReviews] = useState<any[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [hasRunningReview, setHasRunningReview] = useState(false);
+  
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [testsLoading, setTestsLoading] = useState(false);
+  const [generatedResult, setGeneratedResult] = useState<{title: string, content: string} | null>(null);
+
+  const handleGenerateDocs = async () => {
+    setDocsLoading(true);
+    try {
+      const data = await api.post(`/projects/${projectId}/generate-docs`, {});
+      setGeneratedResult({ title: "Generated Documentation", content: data.documentation });
+    } catch (err) {
+      alert("Failed to generate docs");
+    } finally {
+      setDocsLoading(false);
+    }
+  };
+
+  const handleGenerateTests = async () => {
+    if (!selectedFile?.id) return;
+    setTestsLoading(true);
+    try {
+      const data = await api.post(`/projects/${projectId}/files/${selectedFile.id}/generate-tests`, {});
+      setGeneratedResult({ title: `Generated Tests for ${selectedFile.name}`, content: data.tests });
+    } catch (err) {
+      alert("Failed to generate tests");
+    } finally {
+      setTestsLoading(false);
+    }
+  };
 
   const fetchTree = async () => {
     setTreeLoading(true);
@@ -239,81 +286,16 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ project
         <Navbar />
 
         {/* Workspace Toolbar */}
-        <div className="h-14 border-b border-white/5 bg-zinc-900/50 flex items-center px-4 justify-between shrink-0">
-          <div className="flex items-center gap-3 text-sm">
-            <span className="text-zinc-400">Workspace /</span>
-            {isEditingName ? (
-              <input
-                type="text"
-                className="bg-zinc-900 border border-sky-500 rounded px-2 py-0.5 text-zinc-100 font-medium focus:outline-none min-w-[150px]"
-                value={editedName}
-                onChange={(e) => setEditedName(e.target.value)}
-                autoFocus
-                onBlur={async () => {
-                  setIsEditingName(false);
-                  const newName = editedName.trim();
-                  if (newName && newName !== project?.name) {
-                    // Optimistically update the UI instantly
-                    const previousName = project?.name;
-                    setProject({ ...project, name: newName });
-
-                    try {
-                      await api.patch(`/projects/${projectId}`, { name: newName });
-                    } catch (err) {
-                      console.error("Failed to rename project", err);
-                      // Revert on failure
-                      setProject({ ...project, name: previousName });
-                    }
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") e.currentTarget.blur();
-                  if (e.key === "Escape") {
-                    setEditedName(project?.name || "");
-                    setIsEditingName(false);
-                  }
-                }}
-              />
-            ) : (
-              <span
-                className="font-medium text-zinc-100 cursor-text hover:text-sky-400 transition-colors rounded px-1 -ml-1 border border-transparent hover:border-white/10"
-                onDoubleClick={() => {
-                  setEditedName(project?.name || "");
-                  setIsEditingName(true);
-                }}
-                title="Double click to rename"
-              >
-                {project?.name}
-              </span>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setShowSettingsModal(true)}
-              className="btn-secondary py-1.5 text-sm flex items-center gap-2 mr-2"
-            >
-              <Settings className="w-4 h-4" />
-              Settings
-            </button>
-            {hasRunningReview && (
-              <div className="flex items-center gap-2 px-3 py-1.5 mr-2 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 text-sm font-medium">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Reviewing...</span>
-              </div>
-            )}
-            <button
-              onClick={() => setShowReviewModal(true)}
-              disabled={reviewLoading || treeData.length === 0}
-              className="btn-primary py-1.5 text-sm flex items-center gap-2"
-            >
-              {reviewLoading ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> Starting...</>
-              ) : (
-                "Run Review"
-              )}
-            </button>
-          </div>
-        </div>
+        <WorkspaceToolbar
+          projectId={projectId as string}
+          projectName={project?.name || ""}
+          hasRunningReview={hasRunningReview}
+          reviewLoading={reviewLoading}
+          treeDataLength={treeData.length}
+          onProjectNameUpdate={(newName) => setProject({ ...project, name: newName })}
+          onOpenSettings={() => setShowSettingsModal(true)}
+          onRunReview={() => setShowReviewModal(true)}
+        />
 
         {/* 3-Pane Layout */}
         <div className="flex-1 flex overflow-hidden">
@@ -415,10 +397,22 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ project
               >
                 Code {selectedFile && selectedFile.type !== 'directory' ? `- ${selectedFile.name}` : ''}
               </div>
+              <div className="ml-auto flex items-center pr-4 gap-2">
+                 {activeTab === "code" && selectedFile?.type !== 'directory' && (
+                    <button className="btn-secondary py-1 px-3 text-xs" onClick={handleGenerateTests} disabled={testsLoading}>
+                       {testsLoading ? <><Loader2 className="w-3 h-3 inline mr-1 animate-spin" /> Generating...</> : 'Generate Tests'}
+                    </button>
+                 )}
+                 {activeTab === "overview" && (
+                    <button className="btn-secondary py-1 px-3 text-xs" onClick={handleGenerateDocs} disabled={docsLoading}>
+                       {docsLoading ? <><Loader2 className="w-3 h-3 inline mr-1 animate-spin" /> Generating...</> : 'Generate Docs'}
+                    </button>
+                 )}
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto bg-[#0d1117] relative">
               {activeTab === "overview" ? (
-                <OverviewTab stats={stats} reviews={reviews} onRunReview={() => setShowReviewModal(true)} onReviewClick={(rId) => { setSelectedReviewId(rId); setRightTab("issues"); }} />
+                <OverviewTab projectId={projectId as string} stats={stats} reviews={reviews} onRunReview={() => setShowReviewModal(true)} onReviewClick={(rId) => { setSelectedReviewId(rId); setRightTab("issues"); }} />
               ) : treeData.length === 0 ? (
                 <div className="flex h-full items-center justify-center p-8">
                   <div className="text-center max-w-sm">
@@ -466,190 +460,22 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ project
           </main>
 
           {/* Right: Issue Sidebar & AI Chat */}
-          <aside className="w-96 border-l border-white/5 bg-zinc-900/20 flex flex-col shrink-0 relative">
-            <div className="h-10 flex border-b border-white/5 bg-zinc-900/30 shrink-0">
-              <div
-                className={`flex-1 flex items-center justify-center px-4 py-2 text-xs font-medium cursor-pointer tracking-wider uppercase transition-colors ${rightTab === 'issues' ? 'border-b-2 border-sky-500 text-sky-400 bg-zinc-800/50' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/30'}`}
-                onClick={() => setRightTab("issues")}
-              >
-                Issues {fileIssues.length > 0 ? `(${fileIssues.length})` : ''}
-              </div>
-              <div
-                className={`flex-1 flex items-center justify-center px-4 py-2 text-xs font-medium cursor-pointer tracking-wider uppercase transition-colors ${rightTab === 'chat' ? 'border-b-2 border-emerald-500 text-emerald-400 bg-zinc-800/50' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/30'}`}
-                onClick={() => setRightTab("chat")}
-              >
-                AI Chat
-              </div>
-            </div>
-            <div className="flex-1 overflow-hidden relative">
-              {rightTab === "chat" ? (
-                <div className="absolute inset-0">
-                  <AIChat
-                    projectId={projectId as string}
-                    context={{
-                      fileId: selectedFile?.id,
-                      fileName: selectedFile?.name,
-                      issue: selectedIssue,
-                      lines: getHighlightLines()
-                    }}
-                  />
-                </div>
-              ) : (
-                <div className="flex flex-col h-full overflow-hidden">
-                  {/* Issue Filtering Toolbar */}
-                  <div className="p-3 border-b border-white/5 bg-zinc-900/30 flex flex-col gap-2 shrink-0">
-                    <input
-                      type="text"
-                      placeholder="Search issues..."
-                      value={issueSearch}
-                      onChange={(e) => setIssueSearch(e.target.value)}
-                      className="w-full bg-zinc-950 border border-white/10 rounded px-3 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-sky-500/50"
-                    />
-                    <div className="flex gap-1 overflow-x-auto pb-1 hide-scrollbar">
-                      {['all', 'critical', 'high', 'medium', 'low'].map(sev => (
-                        <button
-                          key={sev}
-                          onClick={() => setIssueSeverityFilter(sev)}
-                          className={`px-2 py-1 text-[10px] uppercase tracking-wider font-medium rounded whitespace-nowrap ${issueSeverityFilter === sev
-                              ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
-                              : 'bg-zinc-800/50 text-zinc-400 border border-white/5 hover:bg-zinc-800'
-                            }`}
-                        >
-                          {sev}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto p-4">
-                    {selectedReviewId && (
-                      <div className="mb-3 px-3 py-2 bg-sky-500/10 border border-sky-500/20 rounded flex justify-between items-center text-xs text-sky-400">
-                        <span>Showing issues for selected review</span>
-                        <button onClick={() => setSelectedReviewId(null)} className="hover:text-white">&times;</button>
-                      </div>
-                    )}
-                    {contentLoading ? (
-                      <div className="flex justify-center p-4"><Loader2 className="w-4 h-4 animate-spin text-zinc-500" /></div>
-                    ) : fileIssues.length === 0 ? (
-                      <div className="text-sm text-zinc-500 text-center flex flex-col h-full items-center justify-center">
-                        <CheckCircle2 className="w-8 h-8 text-emerald-500/40 mb-3" />
-                        No issues detected. Your code looks clean! 🎉
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {fileIssues
-                          .filter(issue => {
-                            if (selectedReviewId && issue.review_id !== selectedReviewId) return false;
-                            if (issueSeverityFilter !== 'all' && issue.severity !== issueSeverityFilter) return false;
-                            if (issueSearch) {
-                              const term = issueSearch.toLowerCase();
-                              return (issue.title?.toLowerCase().includes(term) || issue.description?.toLowerCase().includes(term) || issue.category?.toLowerCase().includes(term));
-                            }
-                            return true;
-                          })
-                          .sort((a, b) => {
-                            const rank: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
-                            return (rank[b.severity] || 0) - (rank[a.severity] || 0);
-                          }).map((issue, idx) => (
-                            <div
-                              key={issue.id || idx}
-                              className="p-3 rounded-lg bg-zinc-900/50 border border-white/5 hover:border-sky-500/30 cursor-pointer transition-colors"
-                              onClick={() => handleIssueClick(issue)}
-                            >
-                              <div className="flex items-center gap-2 mb-1.5">
-                                <AlertCircle className={`w-3.5 h-3.5 ${issue.severity === 'critical' ? 'text-red-500' :
-                                    issue.severity === 'high' ? 'text-orange-500' :
-                                      issue.severity === 'medium' ? 'text-yellow-500' :
-                                        'text-blue-500'
-                                  }`} />
-                                <span className="text-xs font-medium text-zinc-300 truncate">{issue.title}</span>
-                              </div>
-                              {issue.category && (
-                                <div className="flex justify-between items-center text-[10px] uppercase tracking-wider text-zinc-500 mb-2 font-medium">
-                                  <span className="text-sky-500/80">{issue.category}</span>
-                                  {issue.file_name && (
-                                    <span className="flex items-center gap-1 bg-zinc-800/50 px-1.5 py-0.5 rounded">
-                                      {issue.file_name}{issue.line_start ? `:${issue.line_start}` : ''}
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-                              <div className={`text-xs text-zinc-500 mb-3 ${selectedIssue?.id === issue.id ? '' : 'line-clamp-2'}`}>
-                                {issue.description}
-                              </div>
-
-                              {issue.evidence && selectedIssue?.id === issue.id && (
-                                <div className="mb-3">
-                                  <div className="text-[10px] uppercase font-bold text-zinc-500 mb-1 tracking-wider">Why it matters</div>
-                                  <div className="text-xs text-zinc-400 font-mono bg-zinc-950 p-1.5 rounded border border-white/5 whitespace-pre-wrap">
-                                    {issue.evidence}
-                                  </div>
-                                </div>
-                              )}
-
-                              {issue.recommendation && selectedIssue?.id === issue.id && (
-                                <div className="mb-3">
-                                  <div className="text-[10px] uppercase font-bold text-zinc-500 mb-1 tracking-wider">Recommendation</div>
-                                  <div className="text-xs text-emerald-400/90 bg-emerald-500/10 p-1.5 rounded border border-emerald-500/20 whitespace-pre-wrap">
-                                    {issue.recommendation}
-                                  </div>
-                                </div>
-                              )}
-
-                              <div className="flex gap-2">
-                                <button
-                                  className="flex-1 py-1 text-[10px] font-medium rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleIssueClick(issue);
-                                  }}
-                                >
-                                  View Code
-                                </button>
-                                <button
-                                  className="flex-1 py-1 text-[10px] font-medium rounded bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors flex items-center justify-center gap-1 disabled:opacity-50"
-                                  onClick={(e) => handleSuggestFix(issue, e)}
-                                  disabled={fixes[issue.id]?.loading}
-                                >
-                                  {fixes[issue.id]?.loading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Suggest Fix"}
-                                </button>
-                                <button
-                                  className="flex-1 py-1 text-[10px] font-medium rounded bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 transition-colors flex items-center justify-center gap-1"
-                                  onClick={(e) => handleAskAI(issue, e)}
-                                >
-                                  Ask AI
-                                </button>
-                              </div>
-
-                              {fixes[issue.id]?.diff && (
-                                <div className="mt-3">
-                                  <div className="text-[10px] uppercase font-bold text-zinc-500 mb-1 tracking-wider">Suggested Fix</div>
-                                  <div className="text-xs text-zinc-300 font-mono bg-zinc-950 p-2 rounded border border-white/10 max-h-48 overflow-y-auto whitespace-pre-wrap">
-                                    {fixes[issue.id]?.diff}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        {fileIssues.length > 0 && fileIssues.filter(issue => {
-                          if (issueSeverityFilter !== 'all' && issue.severity !== issueSeverityFilter) return false;
-                          if (issueSearch) {
-                            const term = issueSearch.toLowerCase();
-                            return (issue.title?.toLowerCase().includes(term) || issue.description?.toLowerCase().includes(term) || issue.category?.toLowerCase().includes(term));
-                          }
-                          return true;
-                        }).length === 0 && (
-                            <div className="text-sm text-zinc-500 text-center py-4">
-                              No issues match your filters.
-                            </div>
-                          )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </aside>
+          <IssueSidebar
+            projectId={projectId as string}
+            fileIssues={fileIssues}
+            selectedFile={selectedFile}
+            selectedIssue={selectedIssue}
+            selectedReviewId={selectedReviewId}
+            contentLoading={contentLoading}
+            rightTab={rightTab}
+            fixes={fixes}
+            onTabChange={setRightTab}
+            onClearReviewFilter={() => setSelectedReviewId(null)}
+            onIssueClick={handleIssueClick}
+            onSuggestFix={handleSuggestFix}
+            onAskAI={handleAskAI}
+            getHighlightLines={getHighlightLines}
+          />
 
         </div>
       </div>
@@ -694,6 +520,23 @@ export default function ProjectWorkspace({ params }: { params: Promise<{ project
           onCancel={() => setShowReviewModal(false)}
           loading={reviewLoading}
         />
+      )}
+
+      {generatedResult && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-zinc-950 border border-white/10 rounded-2xl p-6 w-full max-w-3xl shadow-2xl flex flex-col max-h-[85vh]">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-medium text-zinc-100">{generatedResult.title}</h3>
+              <button onClick={() => setGeneratedResult(null)} className="text-zinc-500 hover:text-white">&times;</button>
+            </div>
+            <div className="flex-1 overflow-auto bg-[#0d1117] rounded-lg border border-white/5 p-4 text-sm text-zinc-300 font-mono whitespace-pre-wrap">
+              {generatedResult.content}
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button onClick={() => setGeneratedResult(null)} className="btn-secondary">Close</button>
+            </div>
+          </div>
+        </div>
       )}
     </ProtectedRoute>
   );
